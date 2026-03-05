@@ -1,4 +1,4 @@
-﻿/**
+/**
  * api-server.ts — JOBBER PRO — 35 ENDPOINTS
  *
  * ════ FIX R — spotChange showing 0.00 (FIXED) ════════════════════════════════
