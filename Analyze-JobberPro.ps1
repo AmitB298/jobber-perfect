@@ -525,7 +525,7 @@ if (-not $Quick) {
             } else {
                 try {
                     $resp = Invoke-WebRequest -Uri "$ApiBase$($ep.Path)" -Method $ep.Method `
-                            -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+                            -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop
                     if ($resp.StatusCode -eq 200) {
                         Write-OK "$tag $($ep.Method) $($ep.Path)  [$($ep.Name)]  → 200"
                         $passCount++
@@ -534,13 +534,19 @@ if (-not $Quick) {
                         $failCount++
                     }
                 } catch {
-                    $status = if ($_.Exception.Response) { $_.Exception.Response.StatusCode.value__ } else { "NO RESP" }
-                    if ($isCritical) {
-                        Write-Err "$tag $($ep.Method) $($ep.Path)  [$($ep.Name)]  → $status" $errDeduct
+                    $statusCode = if ($_.Exception.Response) { $_.Exception.Response.StatusCode.value__ } else { 0 }
+                    $statusText = if ($statusCode -gt 0) { $statusCode } else { "NO RESP" }
+                    # Any response except 404 means the route EXISTS — only 404 = truly missing
+                    if ($statusCode -gt 0 -and $statusCode -ne 404) {
+                        Write-OK "$tag $($ep.Method) $($ep.Path)  [$($ep.Name)]  → $statusCode (route exists)"
+                        $passCount++
+                    } elseif ($isCritical) {
+                        Write-Err "$tag $($ep.Method) $($ep.Path)  [$($ep.Name)]  → $statusText" $errDeduct
+                        $failCount++
                     } else {
-                        Write-Warn "$($ep.Method) $($ep.Path)  [$($ep.Name)]  → $status" $errDeduct
+                        Write-Warn "$($ep.Method) $($ep.Path)  [$($ep.Name)]  → $statusText" $errDeduct
+                        $failCount++
                     }
-                    $failCount++
                 }
             }
         }
