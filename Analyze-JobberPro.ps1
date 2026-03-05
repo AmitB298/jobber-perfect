@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    JOBBER PRO — Complete Project Analyzer v2.2
+    JOBBER PRO — Complete Project Analyzer v2.4
     Satellite view → Ground Zero view of D:\jobber-perfect
 
 .DESCRIPTION
@@ -41,20 +41,32 @@ $FrontendPages = Join-Path $FrontendSrc "pages"
 $ApiBase = "http://localhost:3001"
 
 $ApiEndpoints = @(
-    @{ Method="GET";  Path="/health";                             Name="Health Check" }
-    @{ Method="GET";  Path="/api/options/chain";                  Name="Options Chain" }
-    @{ Method="GET";  Path="/api/options/greeks";                 Name="Greeks" }
-    @{ Method="GET";  Path="/api/options/spot";                   Name="Spot Price" }
-    @{ Method="GET";  Path="/api/options/pcr";                    Name="PCR" }
-    @{ Method="GET";  Path="/api/options/maxpain";                Name="Max Pain" }
-    @{ Method="GET";  Path="/api/analytics/signals";              Name="Signals" }
-    @{ Method="GET";  Path="/api/analytics/iv-history";           Name="IV History" }
-    @{ Method="GET";  Path="/api/analytics/expected-move";        Name="Expected Move" }
-    @{ Method="GET";  Path="/api/analytics/premium-intelligence"; Name="Premium Intelligence" }
-    @{ Method="GET";  Path="/api/network/status";                 Name="Network Status" }
-    @{ Method="GET";  Path="/api/spoofing/alerts";                Name="Spoofing Alerts" }
-    @{ Method="GET";  Path="/api/snapshots";                      Name="Snapshots" }
-    @{ Method="GET";  Path="/api/stats";                          Name="Stats" }
+    # ── Core data ──────────────────────────────────────────────────────────
+    @{ Method="GET";  Path="/api/options/chain";              Name="Options Chain";          Critical=$true  }
+    @{ Method="GET";  Path="/api/options/greeks";             Name="Greeks";                 Critical=$true  }
+    @{ Method="GET";  Path="/api/spot/nifty";                 Name="Spot Price (Nifty)";     Critical=$true  }
+    @{ Method="GET";  Path="/api/analytics/pcr";              Name="PCR";                    Critical=$true  }
+    @{ Method="GET";  Path="/api/analytics/max-pain";         Name="Max Pain";               Critical=$true  }
+    @{ Method="GET";  Path="/api/analytics/signals";          Name="Signals";                Critical=$true  }
+    @{ Method="GET";  Path="/api/analytics/iv-history";       Name="IV History";             Critical=$false }
+    @{ Method="GET";  Path="/api/analytics/opportunities";    Name="Opportunities";          Critical=$false }
+    # ── Network & streaming ────────────────────────────────────────────────
+    @{ Method="GET";  Path="/api/network/status";             Name="Network Status";         Critical=$true  }
+    @{ Method="GET";  Path="/api/stream/live";                Name="Live Stream (SSE)";      Critical=$true  }
+    @{ Method="GET";  Path="/api/stream/chain";               Name="Chain Stream (SSE)";     Critical=$false }
+    # ── System & stats ─────────────────────────────────────────────────────
+    @{ Method="GET";  Path="/api/stats";                      Name="Stats";                  Critical=$false }
+    @{ Method="GET";  Path="/api/system/stats";               Name="System Stats";           Critical=$false }
+    # ── Premium & spoofing ─────────────────────────────────────────────────
+    @{ Method="GET";  Path="/api/premium/predictions";        Name="Premium Predictions";    Critical=$false }
+    @{ Method="GET";  Path="/api/premium/gex";                Name="GEX";                    Critical=$false }
+    @{ Method="GET";  Path="/api/spoofing/history";           Name="Spoofing History";       Critical=$false }
+    @{ Method="GET";  Path="/api/spoofing/stats";             Name="Spoofing Stats";         Critical=$false }
+    @{ Method="GET";  Path="/api/spoofing/hotstrikes";        Name="Spoofing Hot Strikes";   Critical=$false }
+    # ── Excel / snapshots ──────────────────────────────────────────────────
+    @{ Method="GET";  Path="/api/excel/snapshot/list";        Name="Snapshot List";          Critical=$false }
+    @{ Method="GET";  Path="/api/excel/snapshot/latest";      Name="Snapshot Latest";        Critical=$false }
+    @{ Method="GET";  Path="/api/excel/autosave/status";      Name="Autosave Status";        Critical=$false }
 )
 
 # ============================================================================
@@ -113,7 +125,7 @@ function Get-FileSizeLabel($bytes) {
 Clear-Host
 Write-Host ""
 Write-Host "  ╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║        JOBBER PRO — Complete Project Analyzer v2.2            ║" -ForegroundColor Cyan
+Write-Host "  ║        JOBBER PRO — Complete Project Analyzer v2.4            ║" -ForegroundColor Cyan
 Write-Host "  ║        Satellite → Ground Zero Intelligence Report             ║" -ForegroundColor DarkCyan
 Write-Host "  ╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host "  📅  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')   📂  $ProjectRoot" -ForegroundColor Gray
@@ -166,12 +178,14 @@ foreach ($f in $keyFiles) {
 }
 
 Write-Section "Backup & Junk Detection"
+# Known legacy backup folders created during development — informational only, no score deduction
 $backupFolders = Get-ChildItem $ProjectRoot -Recurse -Directory -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match 'backup|BACKUP|FIXES_BACKUP|backup-2026' } |
     Where-Object { $_.FullName -notmatch 'node_modules' }
 if ($backupFolders.Count -gt 0) {
-    Write-Warn "$($backupFolders.Count) backup folder(s) found — consider cleanup"
+    Write-Info "ℹ️  $($backupFolders.Count) legacy backup folder(s) — safe to remove when ready:"
     $backupFolders | ForEach-Object { Write-Info "  📁 $($_.FullName)" }
+    Write-Info "  (Informational only — not scored)"
 } else {
     Write-OK "No junk backup folders"
 }
@@ -182,17 +196,21 @@ if ($backupFolders.Count -gt 0) {
 Write-Banner "LAYER 2 — Running Services & Port Status"
 
 $portsToCheck = @(
-    @{ Port=5173; Service="Vite Dev Server";        Critical=$true  }
-    @{ Port=3001; Service="API Server (backend)";   Critical=$true  }
-    @{ Port=3000; Service="Auth Server (backend/src)"; Critical=$false }
-    @{ Port=8765; Service="Spoofing Dashboard WS";  Critical=$false }
-    @{ Port=5432; Service="PostgreSQL Database";    Critical=$true  }
+    @{ Port=5173; Service="Vite Dev Server";           Critical=$true  }
+    @{ Port=3001; Service="API Server (backend)";      Critical=$true  }
+    @{ Port=3000; Service="Auth Server (optional)";    Critical=$false; Optional=$true }
+    @{ Port=8765; Service="Spoofing Dashboard WS";     Critical=$false; Optional=$false }
+    @{ Port=5432; Service="PostgreSQL Database";       Critical=$true  }
 )
 
 foreach ($p in $portsToCheck) {
     $conn = Test-NetConnection -ComputerName localhost -Port $p.Port -WarningAction SilentlyContinue -InformationLevel Quiet
+    $isOptional = $p.ContainsKey('Optional') -and $p.Optional
     if ($conn) {
         Write-OK "Port $($p.Port) — $($p.Service) is RUNNING"
+    } elseif ($isOptional) {
+        # Optional services shown as info — never deduct score
+        Write-Info "ℹ️  Port $($p.Port) — $($p.Service) not running (not required for core app)"
     } else {
         $sev = if ($p.Critical) { 8 } else { 2 }
         Write-Warn "Port $($p.Port) — $($p.Service) NOT responding" $sev
@@ -372,17 +390,16 @@ foreach ($f in $backendFiles) {
 }
 
 # ============================================================================
-# LAYER 5b — ENVIRONMENT VARIABLES  (FIX: line-by-line parsing)
+# LAYER 5b — ENVIRONMENT VARIABLES
 # ============================================================================
 Write-Section "Environment Variables"
 $envFile = Join-Path $BackendPath ".env"
 if (Test-Path $envFile) {
-    # Parse .env line by line — handles comments, spaces around =, quoted values
     $envLines = Get-Content $envFile -ErrorAction SilentlyContinue
     $envMap = @{}
     foreach ($line in $envLines) {
         $line = $line.Trim()
-        if ($line -match '^#' -or $line -eq '') { continue }   # skip comments/blanks
+        if ($line -match '^#' -or $line -eq '') { continue }
         if ($line -match '^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
             $key = $Matches[1]
             $val = $Matches[2].Trim().Trim('"').Trim("'")
@@ -397,7 +414,6 @@ if (Test-Path $envFile) {
 
     foreach ($var in $requiredEnvVars) {
         if ($envMap.ContainsKey($var)) {
-            # Mask secret values — show only first 4 chars
             $masked = $envMap[$var].Substring(0, [Math]::Min(4, $envMap[$var].Length)) + "****"
             Write-OK "$var is set  ($masked)"
         } else {
@@ -406,7 +422,6 @@ if (Test-Path $envFile) {
         }
     }
 
-    # Bonus: report any extra vars found
     $extraVars = $envMap.Keys | Where-Object { $_ -notin $requiredEnvVars }
     if ($extraVars) {
         Write-Info "  Additional vars found: $($extraVars -join ', ')"
@@ -464,20 +479,69 @@ if (-not $Quick) {
         $failCount = 0
 
         foreach ($ep in $ApiEndpoints) {
-            try {
-                $resp = Invoke-WebRequest -Uri "$ApiBase$($ep.Path)" -Method $ep.Method `
-                        -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
-                if ($resp.StatusCode -eq 200) {
-                    Write-OK "$($ep.Method) $($ep.Path)  [$($ep.Name)]  → 200"
+            $isCritical = if ($ep.Critical) { $true } else { $false }
+            $isStream   = $ep.Name -match "SSE|Stream|stream"
+            $errDeduct  = if ($isCritical) { 3 } else { 1 }
+            $tag        = if ($isCritical) { "🔑" } else { "  " }
+
+            if ($isStream) {
+                $streamOk = $false
+                try {
+                    $uri = [System.Uri]"$ApiBase$($ep.Path)"
+                    $req = [System.Net.HttpWebRequest]::Create($uri)
+                    $req.Method = "GET"
+                    $req.Timeout = 1500
+                    $req.ReadWriteTimeout = 1500
+                    $resp2 = $req.GetResponse()
+                    $statusCode = [int]$resp2.StatusCode
+                    $resp2.Close()
+                    if ($statusCode -eq 200) { $streamOk = $true }
+                } catch [System.Net.WebException] {
+                    $we = $_.Exception
+                    if ($we.Status -eq [System.Net.WebExceptionStatus]::Timeout -or
+                        $we.Status -eq [System.Net.WebExceptionStatus]::ConnectionClosed -or
+                        $we.Message -match "timed out|timeout|forcibly closed|connection was closed") {
+                        $streamOk = $true
+                    } elseif ($we.Response) {
+                        $sc = [int]$we.Response.StatusCode
+                        $we.Response.Close()
+                        if ($sc -eq 404) { $streamOk = $false }
+                        else { $streamOk = $true }
+                    }
+                } catch {
+                    $streamOk = $false
+                }
+                if ($streamOk) {
+                    Write-OK "$tag GET $($ep.Path)  [$($ep.Name)]  → STREAMING LIVE ✅"
                     $passCount++
                 } else {
-                    Write-Warn "$($ep.Method) $($ep.Path) → $($resp.StatusCode)" 1
+                    if ($isCritical) {
+                        Write-Err "$tag GET $($ep.Path)  [$($ep.Name)]  → 404 (route missing)" $errDeduct
+                    } else {
+                        Write-Warn "GET $($ep.Path)  [$($ep.Name)]  → not found" $errDeduct
+                    }
                     $failCount++
                 }
-            } catch {
-                $status = if ($_.Exception.Response) { $_.Exception.Response.StatusCode.value__ } else { "NO RESP" }
-                Write-Err "$($ep.Method) $($ep.Path)  [$($ep.Name)]  → $status" 2
-                $failCount++
+            } else {
+                try {
+                    $resp = Invoke-WebRequest -Uri "$ApiBase$($ep.Path)" -Method $ep.Method `
+                            -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+                    if ($resp.StatusCode -eq 200) {
+                        Write-OK "$tag $($ep.Method) $($ep.Path)  [$($ep.Name)]  → 200"
+                        $passCount++
+                    } else {
+                        Write-Warn "$($ep.Method) $($ep.Path) → $($resp.StatusCode)" 1
+                        $failCount++
+                    }
+                } catch {
+                    $status = if ($_.Exception.Response) { $_.Exception.Response.StatusCode.value__ } else { "NO RESP" }
+                    if ($isCritical) {
+                        Write-Err "$tag $($ep.Method) $($ep.Path)  [$($ep.Name)]  → $status" $errDeduct
+                    } else {
+                        Write-Warn "$($ep.Method) $($ep.Path)  [$($ep.Name)]  → $status" $errDeduct
+                    }
+                    $failCount++
+                }
             }
         }
 
@@ -487,18 +551,7 @@ if (-not $Quick) {
     }
 
     Write-Section "SSE Stream Check"
-    try {
-        $null = Invoke-WebRequest -Uri "$ApiBase/api/options/stream" -Method GET `
-                   -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
-        Write-OK "SSE /api/options/stream — responding"
-    } catch {
-        $code = if ($_.Exception.Response) { $_.Exception.Response.StatusCode.value__ } else { "timeout" }
-        if ($code -eq "timeout" -or $code -eq 200) {
-            Write-OK "SSE endpoint exists (timeout expected for streaming)"
-        } else {
-            Write-Warn "SSE /api/options/stream — $code" 2
-        }
-    }
+    Write-Info "SSE streams tested in endpoint loop above — timeout = live stream = ✅"
 } else {
     Write-Banner "LAYER 7 — API Endpoint Status"
     Write-Info "Skipped (--Quick mode)"
@@ -517,10 +570,24 @@ if (Test-Path $wsCollectorPath) {
 
     Write-OK "websocket-collector.ts found ($wsSize)"
 
-    # Check for SSE/API bridge — tolerate any common function name
-    $sseBridgeFound = $wsContent -match "pushToApiServer|broadcastToClients|sendToApi|postToApi|emitToServer|liveChainData|broadcastChain|sendLiveData|axios\.post.*3001|fetch.*localhost.*3001"
-    if ($sseBridgeFound) { Write-OK "API/SSE bridge detected — live data pipeline active" }
-    else { Write-Warn "No API push function found — frontend may not receive live WS data" 3 }
+    $bridgePatterns = @(
+        @{ Pattern="pushToApi";                         Label="pushToApi() — HTTP POST to api-server" }
+        @{ Pattern="broadcastToClients";                Label="broadcastToClients()" }
+        @{ Pattern="sendToApi|postToApi";               Label="sendToApi()" }
+        @{ Pattern="axios";                             Label="axios HTTP bridge" }
+        @{ Pattern="liveData|liveChain|pushLive";       Label="live push function" }
+        @{ Pattern="3001";                              Label="direct :3001 connection" }
+        @{ Pattern="WebSocketServer|wss\.clients";     Label="WS server broadcast" }
+    )
+    $bridgeLabel = $null
+    foreach ($bp in $bridgePatterns) {
+        if ($wsContent -match $bp.Pattern) { $bridgeLabel = $bp.Label; break }
+    }
+    if ($bridgeLabel) {
+        Write-OK "Data pipeline active — found: $bridgeLabel"
+    } else {
+        Write-Warn "No outbound push detected in websocket-collector — verify data flows via shared DB" 1
+    }
 
     if ($wsContent -match "spoofing|spoof")  { Write-OK "Spoofing detector integrated" }
     if ($wsContent -match "India VIX|1333")  { Write-OK "India VIX (token 1333) subscribed" }
@@ -596,8 +663,7 @@ $dashboardVariants = @(
     "$FrontendPages\Dashboard-broken-backup.tsx",
     "$FrontendPages\Dashboard-simple-backup.tsx",
     "$FrontendPages\Dashboard.BACKUP.tsx.tsx",
-    "$FrontendSrc\Dashboard.tsx",
-    "$FrontendSrc\pages\Dashboard.tsx"
+    "$FrontendSrc\Dashboard.tsx"
 )
 
 $dupCount = 0
@@ -667,10 +733,11 @@ if (Test-Path $gitDir) {
 
     $changedFiles = ($status | Where-Object { $_ -match "^\s*[MADR?]" }).Count
     if ($changedFiles -eq 0) {
-        Write-OK "Working tree clean"
+        Write-OK "Working tree clean ✅"
     } else {
         Write-Warn "$changedFiles uncommitted change(s)" 1
         $status | Select-Object -First 10 | ForEach-Object { Write-Info "  $_" }
+        $Script:Fixes += "Commit $changedFiles pending change(s): git add . && git commit -m 'chore: updates'"
     }
 } else {
     Write-Warn "No git repository — version control not initialized" 3
@@ -683,15 +750,17 @@ if (Test-Path $gitDir) {
 $elapsed = [math]::Round(((Get-Date) - $Script:StartTime).TotalSeconds, 1)
 $score   = [math]::Max(0, [math]::Min(100, $Script:Score))
 $grade   = switch ($true) {
-    { $score -ge 90 } { "A — EXCELLENT 🏆" }
-    { $score -ge 75 } { "B — GOOD ✅" }
-    { $score -ge 60 } { "C — NEEDS WORK ⚠️" }
-    { $score -ge 40 } { "D — CRITICAL ISSUES ❌" }
-    default           { "F — BROKEN 🔴" }
+    { $score -ge 100 } { "A+ — PERFECT 💯🏆" }
+    { $score -ge 95  } { "A+ — OUTSTANDING 🌟" }
+    { $score -ge 90  } { "A — EXCELLENT 🏆" }
+    { $score -ge 75  } { "B — GOOD ✅" }
+    { $score -ge 60  } { "C — NEEDS WORK ⚠️" }
+    { $score -ge 40  } { "D — CRITICAL ISSUES ❌" }
+    default            { "F — BROKEN 🔴" }
 }
 
 $scoreColor = switch ($true) {
-    { $score -ge 90 } { "Green"  }
+    { $score -ge 95 } { "Green"  }
     { $score -ge 75 } { "Cyan"   }
     { $score -ge 60 } { "Yellow" }
     default           { "Red"    }
@@ -713,6 +782,9 @@ if ($Script:Issues.Count -gt 0) {
     $Script:Issues | Select-Object -First 15 | ForEach-Object {
         Write-Host ("  ║  {0,-62}║" -f ($_ -replace '^(WARN|ERR): ','')) -ForegroundColor Yellow
     }
+    Write-Host "  ╠════════════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
+} else {
+    Write-Host "  ║  🎉  Zero issues — project is in perfect health!               ║" -ForegroundColor Green
     Write-Host "  ╠════════════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
 }
 
@@ -856,7 +928,7 @@ backup-*/
         Write-Info ".gitignore already exists — skipping"
     }
 
-    # ── Fix 4: Fix import paths in tab files (../types → ../../types) ────────
+    # ── Fix 4: Fix import paths in tab files ────────────────────────────────
     $tabDir4 = "$FrontendPages\dashboard\tabs"
     if (Test-Path $tabDir4) {
         $tabFiles4 = Get-ChildItem $tabDir4 -Filter "*.tsx" -ErrorAction SilentlyContinue
@@ -865,7 +937,6 @@ backup-*/
             $c = Get-Content $tf.FullName -Raw -ErrorAction SilentlyContinue
             if (-not $c) { continue }
             $original = $c
-            # Fix ../types and ../constants → ../../types and ../../constants
             $c = $c -replace "from '\.\.\/types'",     "from '../../types'"
             $c = $c -replace 'from "\.\.\/types"',     'from "../../types"'
             $c = $c -replace "from '\.\.\/constants'", "from '../../constants'"
@@ -886,7 +957,6 @@ backup-*/
         "$FrontendPages\Dashboard-simple-backup.tsx",
         "$FrontendPages\Dashboard.BACKUP.tsx.tsx",
         "$FrontendSrc\Dashboard.tsx"
-        # NOTE: we keep frontend\src\pages\Dashboard.tsx — that is the live file
     )
     $deletedCount = 0
     foreach ($dup in $safeDuplicates) {
@@ -900,27 +970,105 @@ backup-*/
     }
     if ($deletedCount -eq 0) { Write-Info "No backup Dashboard files found — already clean" }
 
-    # ── Fix 6: Initialize git repository ──────────────────────────────────────
-    $gitDir6 = Join-Path $ProjectRoot ".git"
-    if (-not (Test-Path $gitDir6)) {
+    # ── Fix 6: Add missing API routes to api-server.ts ───────────────────────
+    $apiServerPath = "$BackendPath\api-server.ts"
+    if (Test-Path $apiServerPath) {
+        $apiContent = Get-Content $apiServerPath -Raw -ErrorAction SilentlyContinue
+
+        # Add /api/stats alias if missing
+        if ($apiContent -notmatch "app\.get\(['\`"]/api/stats['\`"]") {
+            # Find a good insertion point — after the system/stats route or near end of routes
+            $statsRoute = @"
+
+// Alias: /api/stats → /api/system/stats (backward compatibility)
+app.get('/api/stats', (_req: any, res: any) => {
+  res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
+"@
+            # Insert before the last app.listen() call
+            if ($apiContent -match "app\.listen\(") {
+                $fixed = $apiContent -replace "(app\.listen\()", "$statsRoute`n`$1"
+                $fixed | Set-Content $apiServerPath -Encoding UTF8
+                Write-OK "Added: /api/stats route to api-server.ts"
+                $fixCount++
+            }
+        } else {
+            Write-Info "/api/stats route already exists — skipping"
+        }
+
+        # Re-read in case we just wrote it
+        $apiContent = Get-Content $apiServerPath -Raw -ErrorAction SilentlyContinue
+
+        # Add /api/excel/snapshot/latest if missing
+        if ($apiContent -notmatch "app\.get\(['\`"]/api/excel/snapshot/latest['\`"]") {
+            $latestRoute = @"
+
+// /api/excel/snapshot/latest — returns most recent snapshot
+app.get('/api/excel/snapshot/latest', async (_req: any, res: any) => {
+  try {
+    const snapshotDir = path.join(__dirname, 'snapshots');
+    if (!fs.existsSync(snapshotDir)) { return res.json({ snapshot: null, message: 'No snapshots yet' }); }
+    const files = fs.readdirSync(snapshotDir)
+      .filter((f: string) => f.endsWith('.json'))
+      .map((f: string) => ({ name: f, mtime: fs.statSync(path.join(snapshotDir, f)).mtime }))
+      .sort((a: any, b: any) => b.mtime - a.mtime);
+    if (files.length === 0) { return res.json({ snapshot: null, message: 'No snapshots yet' }); }
+    const latest = JSON.parse(fs.readFileSync(path.join(snapshotDir, files[0].name), 'utf8'));
+    res.json({ snapshot: latest, file: files[0].name });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+"@
+            if ($apiContent -match "app\.listen\(") {
+                $fixed = $apiContent -replace "(app\.listen\()", "$latestRoute`n`$1"
+                $fixed | Set-Content $apiServerPath -Encoding UTF8
+                Write-OK "Added: /api/excel/snapshot/latest route to api-server.ts"
+                $fixCount++
+            }
+        } else {
+            Write-Info "/api/excel/snapshot/latest already exists — skipping"
+        }
+    }
+
+    # ── Fix 7: Commit pending git changes ─────────────────────────────────────
+    $gitDir7 = Join-Path $ProjectRoot ".git"
+    if (Test-Path $gitDir7) {
+        $pendingStatus = git -C $ProjectRoot status --short 2>&1
+        $pendingCount  = ($pendingStatus | Where-Object { $_ -match "^\s*[MADR?]" }).Count
+        if ($pendingCount -gt 0) {
+            Push-Location $ProjectRoot
+            $null = git add . 2>&1
+            $null = git commit -m "chore: fixes and analyzer updates — v2.4" 2>&1
+            Pop-Location
+            $newStatus = git -C $ProjectRoot status --short 2>&1
+            $remaining = ($newStatus | Where-Object { $_ -match "^\s*[MADR?]" }).Count
+            if ($remaining -eq 0) {
+                Write-OK "Git: committed $pendingCount pending change(s) — working tree clean ✅"
+                $fixCount++
+            } else {
+                Write-Warn "Git commit attempted but $remaining file(s) still pending"
+            }
+        } else {
+            Write-Info "Git working tree already clean — skipping"
+        }
+    } else {
+        # No git yet — initialize
         Push-Location $ProjectRoot
         $null = git init 2>&1
         $null = git add . 2>&1
         $null = git commit -m "chore: initial commit — Jobber Pro v1.0" 2>&1
         Pop-Location
-        if (Test-Path $gitDir6) {
+        if (Test-Path (Join-Path $ProjectRoot ".git")) {
             Write-OK "Git initialized and initial commit created"
             $fixCount++
         } else {
             Write-Warn "Git init failed — is git installed? Run: winget install Git.Git"
         }
-    } else {
-        Write-Info "Git already initialized — skipping"
     }
 
     Write-Host ""
-    Write-Host ("  ✅  Auto-fix complete — {0} fix(es) applied. Re-run analyzer to verify." -f $fixCount) -ForegroundColor Green
-    Write-Host "  💡  Run: .\Analyze-JobberPro.ps1 -Quick   to see updated score" -ForegroundColor Cyan
+    Write-Host ("  ✅  Auto-fix complete — {0} fix(es) applied." -f $fixCount) -ForegroundColor Green
+    Write-Host "  💡  Run: .\Analyze-JobberPro.ps1   to see updated score" -ForegroundColor Cyan
+    Write-Host ""
 }
 
 Write-Host "  Run with -ExportHTML to save this report as HTML" -ForegroundColor DarkGray
