@@ -1,0 +1,20 @@
+﻿-- MANUAL FIX REQUIRED: Add Foreign Key constraints to these tables
+-- Files: backend\src\scripts\setup-database.sql  AND  setup-options-schema.sql
+--
+-- Pattern to add after CREATE TABLE:
+--
+-- ALTER TABLE child_table
+--   ADD CONSTRAINT fk_child_parent
+--   FOREIGN KEY (parent_id)
+--   REFERENCES parent_table(id)
+--   ON DELETE CASCADE   -- or ON DELETE SET NULL
+--   ON UPDATE CASCADE;
+--
+-- Common FKs likely missing (inspect your schema):
+--   orders.user_id       → users.id
+--   orders.symbol_id     → symbols.id  (if symbols table exists)
+--   sessions.user_id     → users.id
+--   angel_credentials.user_id → users.id
+--
+-- Run AFTER adding FKs:
+--   psql -U postgres -d jobber_pro -f backend/src/scripts/setup-database.sql

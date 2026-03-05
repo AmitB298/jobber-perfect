@@ -1,0 +1,690 @@
+
+  ╔════════════════════════════════════════════════════════════════════╗
+  ║    JOBBER PRO — ADVANCED POWERSHELL PROJECT ANALYZER  v3.1        ║
+  ║    Bug-free · Mono-repo · Vite/React aware · Build dirs excluded  ║
+  ╚════════════════════════════════════════════════════════════════════╝
+
+
+════════════════════════════════════════════════════════════════════
+  PREFLIGHT CHECKS
+════════════════════════════════════════════════════════════════════
+  ✔  Project path found: D:\jobber-perfect
+  ✔  node v24.12.0 detected
+  ✔  npm 11.6.2 detected
+  ℹ  [LOW] Not a Git repository
+
+  ── Layout Detection
+  ℹ  Sub-project detected: backend/
+  ℹ  Sub-project detected: dashboard/
+  ℹ  Sub-project detected: frontend/
+  ℹ  Frontend framework: Vite/React detected
+
+════════════════════════════════════════════════════════════════════
+  FILE INVENTORY
+════════════════════════════════════════════════════════════════════
+  ℹ  Files (excl. build): 136  |  Size: 54286 KB
+  ℹ  .ts          → 48
+  ℹ  .ps1         → 20
+  ℹ  .json        → 16
+  ℹ  .tsx         → 14
+  ℹ  .js          → 10
+  ℹ  .svg         → 5
+  ℹ  .md          → 5
+  ℹ  .sql         → 3
+  ℹ  .log         → 2
+  ℹ  .css         → 2
+  ℹ  .png         → 2
+  ℹ  .mjs         → 2
+  ℹ  .backup      → 1
+  ℹ  .html        → 1
+  ℹ  .gitignore   → 1
+  ℹ  .example     → 1
+  ℹ  .env         → 1
+  ℹ  .ico         → 1
+  ℹ  .yml         → 1
+
+  ── Critical File Presence
+  ✔  Found: package.json — Root package.json
+  ✔  Found: src\config\environment.ts — Env config module
+  ✔  Found: src\database\db.ts — DB connection manager
+  ✔  Found: src\routes\auth.ts — Auth routes (flat)
+  ✔  Found: src\routes\v1\auth.routes.ts — Auth routes (nested v1)
+  ✔  Found: src\utils\jwt.ts — JWT utilities
+  ✘  [HIGH] Missing: src\middleware\csrf.ts (CSRF middleware)
+  ✔  Found: database\schema.sql — Main DB schema
+  ✔  Found: tsconfig.json — TypeScript config
+  ✔  Found: .env.example — .env template
+  ✔  Found: .gitignore — Git ignore rules
+  ✘  [CRITICAL] .env file committed to repo: backend\.env
+  ⚠  [MEDIUM] 3 .log file(s) in repository — may contain sensitive data
+  ✘  [HIGH] .gitignore not found in project root
+
+════════════════════════════════════════════════════════════════════
+  PACKAGE.JSON ANALYSIS
+════════════════════════════════════════════════════════════════════
+
+  ── Parsing: package.json
+  ℹ  [LOW] No scripts section (may be workspace root)
+  ℹ  Prod: 2  Dev: 0
+  ⚠  [MEDIUM] Security package missing: helmet
+  ⚠  [MEDIUM] Security package missing: express-rate-limit
+  ⚠  [MEDIUM] Security package missing: cors
+  ⚠  [MEDIUM] Security package missing: joi
+  ⚠  [MEDIUM] Security package missing: zod
+  ℹ  [LOW] 2 unpinned dependencies (^ or ~)
+  ℹ  [LOW] No 'engines' field — Node.js version unconstrained
+
+  ── Parsing: backend\package.json
+  ✔  Script 'start' present
+  ✔  Script 'dev' present
+  ✔  Script 'build' present
+  ✔  Script 'test' present
+  ⚠  [MEDIUM] Missing script: 'lint'
+  ℹ  Prod: 21  Dev: 11
+  ✘  [HIGH] Both 'redis' and 'ioredis' present — conflict
+  ⚠  [MEDIUM] Security package missing: zod
+  ℹ  [LOW] 32 unpinned dependencies (^ or ~)
+  ℹ  [LOW] No 'engines' field — Node.js version unconstrained
+
+  ── Parsing: dashboard\package.json
+  ✔  Script 'start' present
+  ✔  Script 'dev' present
+  ✔  Script 'build' present
+  ⚠  [MEDIUM] Missing script: 'test'
+  ✔  Script 'lint' present
+  ℹ  Prod: 3  Dev: 8
+  ℹ  [LOW] 7 unpinned dependencies (^ or ~)
+  ℹ  [LOW] No 'engines' field — Node.js version unconstrained
+
+  ── Parsing: dashboard\.next\dev\package.json
+  ℹ  [LOW] No scripts section (may be workspace root)
+  ℹ  Prod: 0  Dev: 0
+  ℹ  [LOW] No 'engines' field — Node.js version unconstrained
+
+  ── Parsing: dashboard\.next\dev\build\package.json
+  ℹ  [LOW] No scripts section (may be workspace root)
+  ℹ  Prod: 0  Dev: 0
+  ℹ  [LOW] No 'engines' field — Node.js version unconstrained
+
+  ── Parsing: frontend\package.json
+  ⚠  [MEDIUM] Missing script: 'start'
+  ✔  Script 'dev' present
+  ✔  Script 'build' present
+  ⚠  [MEDIUM] Missing script: 'test'
+  ⚠  [MEDIUM] Missing script: 'lint'
+  ℹ  Prod: 27  Dev: 20
+  ℹ  [LOW] 47 unpinned dependencies (^ or ~)
+  ℹ  [LOW] No 'engines' field — Node.js version unconstrained
+
+  ── Parsing: frontend\backup-20260214-225503\package.json
+  ⚠  [MEDIUM] Missing script: 'start'
+  ✔  Script 'dev' present
+  ✔  Script 'build' present
+  ⚠  [MEDIUM] Missing script: 'test'
+  ⚠  [MEDIUM] Missing script: 'lint'
+  ℹ  Prod: 27  Dev: 20
+  ℹ  [LOW] 47 unpinned dependencies (^ or ~)
+  ℹ  [LOW] No 'engines' field — Node.js version unconstrained
+
+  ── npm audit
+  ✔  npm audit: no known vulnerabilities
+
+════════════════════════════════════════════════════════════════════
+  SECURITY SCAN
+════════════════════════════════════════════════════════════════════
+  ℹ  Scanning 74 source files...
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] Logging sensitive data
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ✘  [CRITICAL] Possible hardcoded password
+  ✘  [CRITICAL] Possible hardcoded password
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] Manual Promise wrapping
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] Manual Promise wrapping
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ⚠  [MEDIUM] TODO/FIXME/HACK comment
+  ℹ  [LOW] TypeScript any type
+  ⚠  [MEDIUM] TODO/FIXME/HACK comment
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] Manual Promise wrapping
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] Manual Promise wrapping
+  ℹ  [LOW] Manual Promise wrapping
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ✘  [HIGH] Logging sensitive data
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] Logging sensitive data
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] Logging sensitive data
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] Logging sensitive data
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] Logging sensitive data
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ✘  [HIGH] Logging sensitive data
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ✘  [CRITICAL] Possible hardcoded password
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ✘  [HIGH] process.exit() — abrupt shutdown
+  ⚠  [MEDIUM] CORS with no config — allows all origins
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ⚠  [MEDIUM] TODO/FIXME/HACK comment
+  ⚠  [MEDIUM] TODO/FIXME/HACK comment
+  ⚠  [MEDIUM] TODO/FIXME/HACK comment
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] console.log/debug in source code
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ⚠  [MEDIUM] TODO/FIXME/HACK comment
+  ℹ  [LOW] TypeScript any type
+  ⚠  [MEDIUM] TODO/FIXME/HACK comment
+  ℹ  [LOW] TypeScript any type
+  ⚠  [MEDIUM] TODO/FIXME/HACK comment
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  [LOW] TypeScript any type
+  ℹ  Security scan done — 32 critical/high hits
+
+════════════════════════════════════════════════════════════════════
+  ENVIRONMENT VALIDATION
+════════════════════════════════════════════════════════════════════
+  ℹ  Checking: backend\.env.example
+  ✔  Documented: JWT_SECRET
+  ✔  Documented: JWT_REFRESH_SECRET
+  ✔  Documented: ENCRYPTION_KEY
+  ✔  Documented: COOKIE_SECRET
+  ✔  Documented: DB_HOST
+  ✔  Documented: DB_PORT
+  ✔  Documented: DB_NAME
+  ✔  Documented: DB_USER
+  ✔  Documented: DB_PASSWORD
+  ✔  Documented: NODE_ENV
+  ✔  Documented: PORT
+  ✔  Documented: BCRYPT_ROUNDS
+  ✔  Documented: CORS_ORIGIN
+  ✔  Documented: LOG_LEVEL
+
+  ── .env value quality: backend\.env
+  ✔  JWT_SECRET set and non-trivial
+  ✔  JWT_REFRESH_SECRET set and non-trivial
+  ✔  ENCRYPTION_KEY set and non-trivial
+  ✔  COOKIE_SECRET set and non-trivial
+  ✔  DB_HOST set and non-trivial
+  ✔  DB_PORT set and non-trivial
+  ✔  DB_NAME set and non-trivial
+  ✔  DB_USER set and non-trivial
+  ✔  DB_PASSWORD set and non-trivial
+
+════════════════════════════════════════════════════════════════════
+  TYPESCRIPT CONFIG
+════════════════════════════════════════════════════════════════════
+  ✔  strict: true enabled
+  ℹ  [LOW] skipLibCheck: true — hides type errors in dependencies
+  ✔  tsconfig parsed OK: backend\tsconfig.json
+  ✔  strict: true enabled
+  ℹ  [LOW] Old compile target: ES2017
+  ℹ  [LOW] skipLibCheck: true — hides type errors in dependencies
+  ✔  tsconfig parsed OK: dashboard\tsconfig.json
+  ✔  strict: true enabled
+  ℹ  [LOW] skipLibCheck: true — hides type errors in dependencies
+  ✔  tsconfig parsed OK: frontend\tsconfig.json
+  ✘  [HIGH] strict mode OFF in frontend\electron\tsconfig.json
+  ℹ  [LOW] skipLibCheck: true — hides type errors in dependencies
+  ✔  tsconfig parsed OK: frontend\electron\tsconfig.json
+
+════════════════════════════════════════════════════════════════════
+  DATABASE SCHEMA ANALYSIS
+════════════════════════════════════════════════════════════════════
+  ✔  Indexes defined in schema
+  ✔  FK constraints present
+  ✔  NOT NULL constraints used
+  ✔  UNIQUE constraints defined
+  ℹ  [LOW] Generic VARCHAR(255) — verify if appropriate
+  ℹ  [INFO] Schema analysed: backend\database\schema.sql
+  ✔  Indexes defined in schema
+  ✘  [HIGH] No FK constraints found
+  ✔  NOT NULL constraints used
+  ℹ  [LOW] SERIAL used — consider UUID PKs for distributed systems
+  ℹ  [INFO] Schema analysed: backend\src\scripts\setup-database.sql
+  ✔  Indexes defined in schema
+  ✘  [HIGH] No FK constraints found
+  ✔  NOT NULL constraints used
+  ℹ  [LOW] SERIAL used — consider UUID PKs for distributed systems
+  ℹ  [INFO] Schema analysed: backend\src\scripts\setup-options-schema.sql
+
+════════════════════════════════════════════════════════════════════
+  API ROUTE ANALYSIS
+════════════════════════════════════════════════════════════════════
+  ℹ  Found 3 route file(s)
+  ℹ  backend\src\routes\v1\auth.routes.ts : 10 route(s)
+  ✔  Auth middleware found (10 routes)
+  ✔  Input validation found
+  ⚠  [MEDIUM] No rate limiting in backend\src\routes\v1\auth.routes.ts
+  ℹ  backend\src\routes\angel.routes.ts : 7 route(s)
+  ✔  Auth middleware found (7 routes)
+  ✘  [HIGH] No input validation in backend\src\routes\angel.routes.ts
+  ⚠  [MEDIUM] No rate limiting in backend\src\routes\angel.routes.ts
+  ℹ  backend\src\routes\auth.ts : 7 route(s)
+  ✔  Auth middleware found (7 routes)
+  ✔  Input validation found
+  ⚠  [MEDIUM] No rate limiting in backend\src\routes\auth.ts
+
+════════════════════════════════════════════════════════════════════
+  CODE QUALITY METRICS
+════════════════════════════════════════════════════════════════════
+
+  ── Large files (>400 lines, excluding build output)
+  ⚠  [MEDIUM] Large file: 976 lines — backend\src\services\angelone.service.ts
+  ⚠  [MEDIUM] Large file: 959 lines — backend\src\routes\v1\auth.routes.ts
+  ⚠  [MEDIUM] Large file: 842 lines — backend\src\routes\auth.ts
+  ⚠  [MEDIUM] Large file: 618 lines — frontend\electron\main\index.ts
+  ⚠  [MEDIUM] Large file: 529 lines — backend\src\scripts\websocket-collector.ts
+  ⚠  [MEDIUM] Large file: 520 lines — dist-electron\main\index.js
+  ⚠  [MEDIUM] Large file: 496 lines — frontend\electron\main\DataManager.ts
+  ⚠  [MEDIUM] Large file: 485 lines — frontend\electron\main\AngelOneAdapter.ts
+  ⚠  [MEDIUM] Large file: 445 lines — frontend\backup-20260214-225503\electron\main\index.ts
+  ⚠  [MEDIUM] Large file: 445 lines — frontend\backup-20260214-231910\electron\main\index.ts
+  ⚠  [MEDIUM] Large file: 414 lines — frontend\electron\main\AuthManager.ts
+  ℹ  [LOW] 20 potentially duplicated function signatures
+  ✘  [HIGH] No test files found (.test.ts / .spec.ts)
+  ✔  ESLint config found
+  ℹ  [LOW] No Prettier config
+  ℹ  [LOW] No Husky pre-commit hooks
+  ✔  CI/CD configuration found: .github\workflows
+  ℹ  [LOW] No Dockerfile / docker-compose found
+
+  ── Frontend / Vite Checks
+  ✔  Vite config found: frontend\vite.config.ts
+  ✔  Tailwind CSS configured
+  ✔  Frontend tsconfig.json found
+  ✔  PostCSS config found
+
+════════════════════════════════════════════════════════════════════
+  AUTH & JWT CHECKS (README Issues #1-#8)
+════════════════════════════════════════════════════════════════════
+
+  ── Auth file: backend\src\middleware\auth.ts
+  ✘  [CRITICAL] Issue #5 OPEN: no integer overflow guard on failed_login_attempts
+  ✘  [CRITICAL] Issue #6 OPEN: TOCTOU race in trial expiry check
+  ✘  [HIGH] Issue #7 OPEN: no CSRF protection on auth routes
+  ✘  [HIGH] Issue #8 OPEN: timing attack possible on login
+  ✘  [HIGH] No account lockout after repeated failures
+  ⚠  [MEDIUM] No strong password validation regex
+  ⚠  [MEDIUM] No email verification flow
+
+  ── Auth file: backend\src\routes\v1\auth.routes.ts
+  ✔  Issue #5 FIXED: integer overflow guard on failed_login_attempts
+  ✔  Issue #6 FIXED: atomic trial expiry check
+  ✘  [HIGH] Issue #7 OPEN: no CSRF protection on auth routes
+  ✔  Issue #8 FIXED: timing attack mitigation present
+  ✔  Account lockout logic present
+  ⚠  [MEDIUM] No strong password validation regex
+  ✔  Email verification flow present
+
+  ── Auth file: backend\src\routes\auth.ts
+  ✘  [CRITICAL] Issue #5 OPEN: no integer overflow guard on failed_login_attempts
+  ✔  Issue #6 FIXED: atomic trial expiry check
+  ✘  [HIGH] Issue #7 OPEN: no CSRF protection on auth routes
+  ✘  [HIGH] Issue #8 OPEN: timing attack possible on login
+  ✔  Account lockout logic present
+  ⚠  [MEDIUM] No strong password validation regex
+  ✔  Email verification flow present
+
+  ── JWT file: backend\src\utils\jwt.ts
+  ✔  Token family tracking present (rotation protection)
+  ✔  JWT expiry configured
+  ✔  Algorithm allowlist specified in verify()
+
+════════════════════════════════════════════════════════════════════
+  GENERATING HTML REPORT
+════════════════════════════════════════════════════════════════════
+  ✔  HTML report saved: C:\Users\user\OneDrive\Desktop\JobberAnalysis_20260215_224400.html
+
+════════════════════════════════════════════════════════════════════
+  ANALYSIS COMPLETE — FINAL SUMMARY
+════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────────────────────┐
+  │         JOBBER PRO — ANALYSIS RESULTS v3        │
+  ├─────────────────────────────────────────────────┤
+  │  🔴 Critical :     7                              │
+  │  🟠 High     :    43                              │
+  │  🟡 Medium   :    42                              │
+  │  🔵 Low      :   356                              │
+  │  ──────────────────────────────────────────────  │
+  │  ⚠  Total   :   448  |  Sec hits:   32            │
+  │  📝 TODOs   :     8  |  Files:    136            │
+  └─────────────────────────────────────────────────┘
+
+  📊 Report: C:\Users\user\OneDrive\Desktop\JobberAnalysis_20260215_224400.html
+
+  ❗ CRITICAL — fix before any deployment:
+     • [Security] .env file committed to repo: backend\.env
+     • [Secrets] Possible hardcoded password
+     • [Secrets] Possible hardcoded password
+     • [Secrets] Possible hardcoded password
+     • [Auth] Issue #5 OPEN: no integer overflow guard on failed_login_attempts
+     • [Auth] Issue #6 OPEN: TOCTOU race in trial expiry check
+     • [Auth] Issue #5 OPEN: no integer overflow guard on failed_login_attempts
+
+  ℹ  Total analysis time: 104.5s
+[PS7]  D:\jobber-perfect>
