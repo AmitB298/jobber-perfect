@@ -1032,7 +1032,7 @@ app.get('/api/excel/snapshot/list', async(req,res)=>{
 });
 
 app.get('/api/excel/snapshot/latest', async(_,res)=>{
-  try{const r=await pool.query(`SELECT * FROM nifty_premium_tracking.option_snapshots ORDER BY captured_at DESC LIMIT 1`);if(!r.rows.length)return res.status(404).json({error:'No snapshots yet'});const row=r.rows[0];res.json({success:true,data:{...row,chain:row.chain_json}});}catch(e:any){res.status(500).json({error:'Load failed',message:e.message});}
+  try{const r=await pool.query(`SELECT * FROM nifty_premium_tracking.option_snapshots ORDER BY captured_at DESC LIMIT 1`);if(!r.rows.length)return res.status(200).json({success:true,data:null,message:'No snapshots yet'});const row=r.rows[0];res.json({success:true,data:{...row,chain:row.chain_json}});}catch(e:any){res.status(500).json({error:'Load failed',message:e.message});}
 });
 
 app.get('/api/excel/snapshot/compare', async(req,res)=>{
@@ -1245,4 +1245,5 @@ httpServer.listen(port, () => {
 ╚════════════════════════════════════════════════════════════════════╝
   `);
 });
+
 
