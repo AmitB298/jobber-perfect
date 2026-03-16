@@ -6,6 +6,45 @@ import { DashData, SignalData, StratLeg } from '../../types';
 import { n, fmt, fmtRs, ivColor } from '../shared/helpers';
 import { BS } from '../shared/BS';
 
+// ── fmtK — formats large OI numbers (copied from Dashboard.tsx) ──────────────
+function fmtK(v: any): string {
+  const num = n(v, 0);
+  if (num >= 1_00_00_000) return (num / 1_00_00_000).toFixed(1) + 'Cr';
+  if (num >= 1_00_000)    return (num / 1_00_000).toFixed(1) + 'L';
+  if (num >= 1_000)       return (num / 1_000).toFixed(1) + 'K';
+  return num.toFixed(0);
+}
+
+// ── OI Distribution Chart (copied from Dashboard.tsx) ────────────────────────
+function OIDistributionChart({ data, atmStrike }: { data: any[]; atmStrike: number }) {
+  if (!data || data.length === 0) return <div className="text-gray-500 text-sm p-4">No data</div>;
+  const maxOI = Math.max(...data.map(d => Math.max(n(d.ce_oi), n(d.pe_oi))), 1);
+  const atm5 = data.filter(d => Math.abs(n(d.strike) - atmStrike) <= 250).slice(0, 14);
+  return (
+    <div className="space-y-1 overflow-y-auto max-h-64">
+      {atm5.map(d => {
+        const cePct = (n(d.ce_oi) / maxOI) * 100, pePct = (n(d.pe_oi) / maxOI) * 100;
+        const isAtm = n(d.strike) === atmStrike;
+        return (
+          <div key={d.strike} className={`flex items-center gap-2 text-xs ${isAtm ? 'bg-yellow-900/30 rounded' : ''}`}>
+            <div className="w-14 text-right text-green-400" style={{ fontSize: 10 }}>{fmtK(d.ce_oi)}</div>
+            <div className="flex-1 flex gap-0.5 h-4 items-center">
+              <div className="flex-1 flex justify-end"><div className="bg-green-600/70 h-3 rounded-l" style={{ width: `${cePct}%`, minWidth: cePct > 0 ? 2 : 0 }} /></div>
+              <div className="text-gray-400 text-center w-12" style={{ fontSize: 9 }}>{isAtm ? '◄►' : n(d.strike)}</div>
+              <div className="flex-1"><div className="bg-red-600/70 h-3 rounded-r" style={{ width: `${pePct}%`, minWidth: pePct > 0 ? 2 : 0 }} /></div>
+            </div>
+            <div className="w-14 text-left text-red-400" style={{ fontSize: 10 }}>{fmtK(d.pe_oi)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================================
+// PAYOFF CHART
+// ============================================================================
+
 function PayoffChart({ legs, spotPrice, dte, iv, rate }: { legs: StratLeg[]; spotPrice: number; dte: number; iv: number; rate: number }) {
   const W = 600, H = 200, PAD = { t: 16, b: 32, l: 48, r: 16 };
   if (!legs.length) return <div className="flex items-center justify-center h-48 text-gray-600 text-sm">Add legs to see payoff chart</div>;
@@ -163,17 +202,17 @@ export function StrategyBuilderTab({ data, signalData }: { data: DashData | null
     setActivePill(key);
     const S = spotPrice;
     const presets: Record<string, [string, string, number, number][]> = {
-      'Long Call':     [['BUY', 'CE', ATM_STRIKE(S), 1]],
-      'Long Put':      [['BUY', 'PE', ATM_STRIKE(S), 1]],
-      'Short Call':    [['SELL', 'CE', ATM_STRIKE(S), 1]],
-      'Short Put':     [['SELL', 'PE', ATM_STRIKE(S), 1]],
-      'Bull Call':     [['BUY', 'CE', ATM_STRIKE(S), 1], ['SELL', 'CE', ATM_STRIKE(S) + 500, 1]],
-      'Bear Put':      [['BUY', 'PE', ATM_STRIKE(S), 1], ['SELL', 'PE', ATM_STRIKE(S) - 500, 1]],
-      'Straddle':      [['BUY', 'CE', ATM_STRIKE(S), 1], ['BUY', 'PE', ATM_STRIKE(S), 1]],
-      'Strangle':      [['BUY', 'CE', ATM_STRIKE(S) + 500, 1], ['BUY', 'PE', ATM_STRIKE(S) - 500, 1]],
-      'Iron Condor':   [['BUY', 'PE', ATM_STRIKE(S) - 1000, 1], ['SELL', 'PE', ATM_STRIKE(S) - 500, 1], ['SELL', 'CE', ATM_STRIKE(S) + 500, 1], ['BUY', 'CE', ATM_STRIKE(S) + 1000, 1]],
-      'Butterfly':     [['BUY', 'CE', ATM_STRIKE(S) - 500, 1], ['SELL', 'CE', ATM_STRIKE(S), 2], ['BUY', 'CE', ATM_STRIKE(S) + 500, 1]],
-      'Short Straddle': [['SELL', 'CE', ATM_STRIKE(S), 1], ['SELL', 'PE', ATM_STRIKE(S), 1]],
+      'Long Call':      [['BUY',  'CE', ATM_STRIKE(S), 1]],
+      'Long Put':       [['BUY',  'PE', ATM_STRIKE(S), 1]],
+      'Short Call':     [['SELL', 'CE', ATM_STRIKE(S), 1]],
+      'Short Put':      [['SELL', 'PE', ATM_STRIKE(S), 1]],
+      'Bull Call':      [['BUY',  'CE', ATM_STRIKE(S),       1], ['SELL', 'CE', ATM_STRIKE(S) + 500, 1]],
+      'Bear Put':       [['BUY',  'PE', ATM_STRIKE(S),       1], ['SELL', 'PE', ATM_STRIKE(S) - 500, 1]],
+      'Straddle':       [['BUY',  'CE', ATM_STRIKE(S),       1], ['BUY',  'PE', ATM_STRIKE(S),       1]],
+      'Strangle':       [['BUY',  'CE', ATM_STRIKE(S) + 500, 1], ['BUY',  'PE', ATM_STRIKE(S) - 500, 1]],
+      'Iron Condor':    [['BUY',  'PE', ATM_STRIKE(S) - 1000, 1], ['SELL', 'PE', ATM_STRIKE(S) - 500, 1], ['SELL', 'CE', ATM_STRIKE(S) + 500, 1], ['BUY', 'CE', ATM_STRIKE(S) + 1000, 1]],
+      'Butterfly':      [['BUY',  'CE', ATM_STRIKE(S) - 500, 1], ['SELL', 'CE', ATM_STRIKE(S), 2], ['BUY', 'CE', ATM_STRIKE(S) + 500, 1]],
+      'Short Straddle': [['SELL', 'CE', ATM_STRIKE(S),       1], ['SELL', 'PE', ATM_STRIKE(S),       1]],
       'Short Strangle': [['SELL', 'CE', ATM_STRIKE(S) + 500, 1], ['SELL', 'PE', ATM_STRIKE(S) - 500, 1]],
     };
     const presetLegs = presets[key]; if (!presetLegs) return;
@@ -218,9 +257,9 @@ export function StrategyBuilderTab({ data, signalData }: { data: DashData | null
             <div className="grid grid-cols-4 gap-px bg-gray-800 flex-shrink-0 text-xs">
               {[
                 { label: 'Max Profit', value: analysis.maxProfit > 1e9 ? 'Unlimited' : fmtRs(analysis.maxProfit), color: 'text-green-400' },
-                { label: 'Max Loss', value: analysis.maxLoss < -1e9 ? 'Unlimited' : fmtRs(Math.abs(analysis.maxLoss)), color: 'text-red-400' },
-                { label: 'PoP', value: (analysis.pop || 0).toFixed(1) + '%', color: 'text-blue-400' },
-                { label: 'Net Flow', value: (analysis.netPremium >= 0 ? 'Credit ' : 'Debit ') + fmtRs(Math.abs(analysis.netPremium), 2), color: analysis.netPremium >= 0 ? 'text-green-400' : 'text-purple-400' },
+                { label: 'Max Loss',   value: analysis.maxLoss < -1e9  ? 'Unlimited' : fmtRs(Math.abs(analysis.maxLoss)), color: 'text-red-400' },
+                { label: 'PoP',        value: (analysis.pop || 0).toFixed(1) + '%', color: 'text-blue-400' },
+                { label: 'Net Flow',   value: (analysis.netPremium >= 0 ? 'Credit ' : 'Debit ') + fmtRs(Math.abs(analysis.netPremium), 2), color: analysis.netPremium >= 0 ? 'text-green-400' : 'text-purple-400' },
               ].map(m => (<div key={m.label} className="bg-gray-900 px-2 py-1.5 text-center"><div className="text-gray-600 text-[9px] uppercase tracking-wide">{m.label}</div><div className={`font-bold font-mono text-xs mt-0.5 ${m.color}`}>{m.value}</div></div>))}
             </div>
           )}
@@ -263,11 +302,11 @@ export function StrategyBuilderTab({ data, signalData }: { data: DashData | null
                   {g && (
                     <div className="flex gap-3 mt-2 text-[10px]">
                       {[
-                        { n: 'Δ', v: (delta! * m * leg.qty).toFixed(3), c: delta! * m >= 0 ? 'text-green-400' : 'text-red-400' },
-                        { n: 'Γ', v: (g.gamma * leg.qty).toFixed(5), c: 'text-purple-400' },
-                        { n: 'Θ', v: (theta! * m * leg.qty).toFixed(2), c: theta! * m >= 0 ? 'text-green-400' : 'text-red-400' },
-                        { n: 'ν', v: (g.vega * m * leg.qty).toFixed(2), c: 'text-blue-400' },
-                        { n: 'IV', v: effectiveIV.toFixed(1) + '%', c: 'text-yellow-400' },
+                        { n: 'Δ',   v: (delta! * m * leg.qty).toFixed(3),  c: delta! * m >= 0 ? 'text-green-400' : 'text-red-400' },
+                        { n: 'Γ',   v: (g.gamma * leg.qty).toFixed(5),      c: 'text-purple-400' },
+                        { n: 'Θ',   v: (theta! * m * leg.qty).toFixed(2),  c: theta! * m >= 0 ? 'text-green-400' : 'text-red-400' },
+                        { n: 'ν',   v: (g.vega * m * leg.qty).toFixed(2),  c: 'text-blue-400' },
+                        { n: 'IV',  v: effectiveIV.toFixed(1) + '%',        c: 'text-yellow-400' },
                         { n: 'LTP', v: '₹' + (leg.type === 'CE' ? n(chain.find(r => n(r.strike_price) === leg.strike)?.ce_ltp) : n(chain.find(r => n(r.strike_price) === leg.strike)?.pe_ltp)).toFixed(2), c: 'text-gray-400' },
                       ].map(({ n: name, v, c }) => (<div key={name} className="text-center"><div className="text-gray-600">{name}</div><div className={`font-mono font-bold ${c}`}>{v}</div></div>))}
                     </div>
@@ -346,10 +385,10 @@ export function StrategyBuilderTab({ data, signalData }: { data: DashData | null
                   <div className="text-[9px] text-gray-600 uppercase tracking-wide mb-2">Portfolio Greeks</div>
                   <div className="grid grid-cols-2 gap-2">
                     {[
-                      { label: 'Net Δ Delta', value: analysis.netDelta.toFixed(4), color: analysis.netDelta >= 0 ? '#22C55E' : '#EF4444', desc: 'Market directional exposure' },
-                      { label: 'Net Θ Theta', value: '₹' + analysis.netTheta.toFixed(2) + '/day', color: analysis.netTheta >= 0 ? '#22C55E' : '#EF4444', desc: 'Daily time decay P&L' },
-                      { label: 'Net ν Vega', value: analysis.netVega.toFixed(2), color: analysis.netVega >= 0 ? '#60A5FA' : '#F97316', desc: 'P&L per 1% IV change' },
-                      { label: 'Net Γ Gamma', value: analysis.netGamma.toFixed(5), color: '#A78BFA', desc: 'Delta change per ₹1 move' },
+                      { label: 'Net Δ Delta', value: analysis.netDelta.toFixed(4),                        color: analysis.netDelta >= 0 ? '#22C55E' : '#EF4444', desc: 'Market directional exposure' },
+                      { label: 'Net Θ Theta', value: '₹' + analysis.netTheta.toFixed(2) + '/day',         color: analysis.netTheta >= 0 ? '#22C55E' : '#EF4444', desc: 'Daily time decay P&L' },
+                      { label: 'Net ν Vega',  value: analysis.netVega.toFixed(2),                         color: analysis.netVega  >= 0 ? '#60A5FA' : '#F97316', desc: 'P&L per 1% IV change' },
+                      { label: 'Net Γ Gamma', value: analysis.netGamma.toFixed(5),                        color: '#A78BFA',                                       desc: 'Delta change per ₹1 move' },
                     ].map(g => (
                       <div key={g.label} className="bg-gray-900 rounded-lg p-2 border border-gray-800">
                         <div className="text-[9px] text-gray-600 mb-0.5">{g.label}</div>
@@ -419,61 +458,3 @@ export function StrategyBuilderTab({ data, signalData }: { data: DashData | null
     </div>
   );
 }
-
-// ============================================================================
-// 🚨 SPOOFING TAB — Live Detection Feed
-// ============================================================================
-
-type SpoofState = 'CLEAR' | 'WATCH' | 'ALERT' | 'CRITICAL';
-type SpoofPhase = 'PATCH_I' | 'PATCH_II' | 'CLOSE_WATCH' | 'NORMAL';
-
-interface LiveSpoofAlert {
-  id:           string;
-  token:        string;
-  symbol:       string;
-  state:        SpoofState;
-  phase:        SpoofPhase;
-  severity:     string;
-  type:         string;
-  strike:       number;
-  optionType:   'CE' | 'PE';
-  ensemble:     number;
-  confidence:   number;
-  action:       string;
-  description:  string;
-  explanation:  string;
-  ltp:          number;
-  bidPrice:     number;
-  askPrice:     number;
-  bidQty:       number;
-  askQty:       number;
-  oi:           number;
-  oiChange:     number;
-  ltpChange:    number;
-  bidAskRatio:  number;
-  spreadPct:    number;
-  detectedAt:   number;
-  timestamp:    string;
-  fv:  { VPIN: number; OBI_L1: number; TBQ_TSQ: number; PostDist: number; spread_pct: number; oi_change: number; ltp_change: number; };
-  js:  { pattern_prob: number; delta_proxy: number; patch1_buy_proxy: number; patch2_sell_proxy: number; ltp_aggression_frac: number; oi_buildup_p1: number; };
-  scores: Record<string, number>;
-}
-
-const STATE_COLOR: Record<SpoofState, string> = {
-  CLEAR: '#22c55e', WATCH: '#fbbf24', ALERT: '#f97316', CRITICAL: '#ef4444',
-};
-const STATE_BG: Record<SpoofState, string> = {
-  CLEAR: 'rgba(21,128,61,.12)', WATCH: 'rgba(161,98,7,.15)', ALERT: 'rgba(194,65,12,.2)', CRITICAL: 'rgba(153,27,27,.3)',
-};
-const STATE_EMOJI: Record<SpoofState, string> = {
-  CLEAR: '✅', WATCH: '👁', ALERT: '⚠️', CRITICAL: '🚨',
-};
-const TYPE_LABEL: Record<string, string> = {
-  BID_WALL: 'Bid Wall', ASK_WALL: 'Ask Wall',
-  LAYERING_BID: 'Layering (Bid)', LAYERING_ASK: 'Layering (Ask)',
-  OI_DIVERGENCE: 'OI Divergence', SPREAD_COMPRESSION: 'Spread Collapse',
-  QUOTE_STUFFING: 'Quote Stuffing', MOMENTUM_IGNITION: 'Momentum Ignition',
-  ABSORPTION: 'Absorption',
-};
-
-

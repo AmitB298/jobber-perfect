@@ -1,5 +1,5 @@
 // src/pages/Settings.tsx - Application Settings
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Settings as SettingsIcon, Bell, Database, Palette, Info, Save, RotateCcw } from 'lucide-react';
 
 export default function Settings() {

@@ -1,0 +1,37 @@
+/* src/styles/global-theme.css
+   Add ONE line to your main.tsx or App.tsx:
+   import './styles/global-theme.css';
+*/
+
+/* ── Default dark values (overridden by JS via CSS vars) ── */
+:root {
+  --bg-base:    #060606;
+  --bg-card:    #0a0a0a;
+  --bg-nav:     #040404;
+  --bg-topbar:  #111111;
+  --border:     #1a1a1a;
+  --border-sub: #111111;
+  --text-pri:   #f3f4f6;
+  --text-sec:   #9ca3af;
+  --text-muted: #4b5563;
+  --accent:     #f97316;
+  --accent2:    #dc2626;
+  --tab-active: #3b82f6;
+}
+
+/* ── Apply vars to Tailwind / existing classes ── */
+.bg-gray-950  { background-color: var(--bg-base)   !important; }
+.bg-gray-900  { background-color: var(--bg-topbar) !important; }
+.bg-gray-800  { background-color: var(--bg-card)   !important; }
+.border-gray-800 { border-color: var(--border)     !important; }
+.border-gray-700 { border-color: var(--border-sub) !important; }
+.text-gray-100 { color: var(--text-pri)   !important; }
+.text-gray-300 { color: var(--text-sec)   !important; }
+.text-gray-500 { color: var(--text-muted) !important; }
+
+/* Tab active indicator */
+.border-blue-400 { border-color: var(--tab-active) !important; }
+.text-blue-400   { color: var(--tab-active)        !important; }
+
+/* Scrollbar */
+* { scrollbar-color: var(--border) var(--bg-base); }

@@ -56,4 +56,9 @@ class WsClient {
 }
 
 export const wsClient = new WsClient();
-wsClient.connect(); // Auto-connect when imported
+// ✅ FIX: removed wsClient.connect() auto-call that was here.
+// It was opening a rogue WebSocket on every import — consuming a backend
+// connection slot and firing callbacks that nothing was listening to.
+//
+// Call wsClient.connect() explicitly only inside the component/hook that
+// needs it (e.g. SpoofingTab), and call wsClient.disconnect() on cleanup.

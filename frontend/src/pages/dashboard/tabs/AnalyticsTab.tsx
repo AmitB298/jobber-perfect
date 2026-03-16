@@ -2,7 +2,7 @@
 // tabs/AnalyticsTab.tsx — IV Analysis + Expected Move
 // ============================================================================
 import { SignalData } from '../../types';
-import { n } from '../shared/helpers';
+import { n, ivColor } from '../shared/helpers';
 
 function IVAnalysisPanel({ ivAnalysis }: { ivAnalysis: any }) {
   if (!ivAnalysis) return <div className="text-center py-10 text-gray-500"><div className="text-3xl mb-3">📊</div><div className="text-sm">Loading IV analysis…</div></div>;
@@ -82,31 +82,24 @@ function ExpectedMoveCalculator({ expectedMove, spotPrice, atmIV, daysToExpiry }
   );
 }
 
-// ============================================================================
-// PAYOFF CHART (SVG — no external deps)
-// ============================================================================
-
 // ── AnalyticsTab wrapper ───────────────────────────────────────────────────
 export function AnalyticsTab({ signalData, ivSource, ivPoints, spotPrice, atmIV, dte }: {
   signalData: SignalData | null; ivSource?: string; ivPoints: number;
   spotPrice: number; atmIV: number | null; dte: number;
 }) {
   return (
-          <div className="p-4 grid grid-cols-2 gap-4 overflow-y-auto h-full">
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-300">📊 IV Analysis</h3>
-                {ivSource && <span className={`text-xs px-2 py-0.5 rounded font-bold ${ivSource === 'real_db' ? 'bg-green-900/60 text-green-400' : 'bg-yellow-900/60 text-yellow-400'}`}>{ivSource === 'real_db' ? `✅ Real DB (${ivPoints}pts)` : `⚠️ Est.`}</span>}
-              </div>
-              <IVAnalysisPanel ivAnalysis={signalData?.ivAnalysis} />
-            </div>
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <h3 className="text-sm font-semibold text-gray-300 mb-3">📐 Expected Move</h3>
-              <ExpectedMoveCalculator expectedMove={signalData?.expectedMove} spotPrice={signalData?.spotPrice ?? spotPrice} atmIV={signalData?.currentIV ?? n(atmIV, 20)} daysToExpiry={signalData?.daysToExpiry ?? dte} />
-            </div>
-          </div>
-        )}
-
+    <div className="p-4 grid grid-cols-2 gap-4 overflow-y-auto h-full">
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-300">📊 IV Analysis</h3>
+          {ivSource && <span className={`text-xs px-2 py-0.5 rounded font-bold ${ivSource === 'real_db' ? 'bg-green-900/60 text-green-400' : 'bg-yellow-900/60 text-yellow-400'}`}>{ivSource === 'real_db' ? `✅ Real DB (${ivPoints}pts)` : `⚠️ Est.`}</span>}
+        </div>
+        <IVAnalysisPanel ivAnalysis={signalData?.ivAnalysis} />
+      </div>
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <h3 className="text-sm font-semibold text-gray-300 mb-3">📐 Expected Move</h3>
+        <ExpectedMoveCalculator expectedMove={signalData?.expectedMove} spotPrice={signalData?.spotPrice ?? spotPrice} atmIV={signalData?.currentIV ?? n(atmIV, 20)} daysToExpiry={signalData?.daysToExpiry ?? dte} />
+      </div>
+    </div>
   );
-}
-
+} 

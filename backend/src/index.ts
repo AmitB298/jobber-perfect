@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import winston from 'winston';
 import authRoutes from './routes/auth';
 import angelRoutes from './routes/angel.routes';
+import internalRoutes from './routes/internal';
 import pool from './database/db';
 
 // Load environment variables
@@ -122,6 +123,7 @@ app.get('/health', async (req: Request, res: Response) => {
 // API routes
 app.use('/auth', authRoutes);
 app.use('/api/angel', angelRoutes);
+app.use('/internal', internalRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
@@ -178,3 +180,4 @@ process.on('SIGINT', () => {
 });
 
 export default app;
+

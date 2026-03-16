@@ -89,4 +89,16 @@ export interface LiveSpoofAlert {
   scores: Record<string, number>;
 }
 
-export type Tab = 'chain' | 'charts' | 'signals' | 'analytics' | 'strategy' | 'predictor' | 'data' | 'spoofing' | 'network';
+export type Tab =
+  | 'chain'
+  | 'charts'
+  | 'signals'
+  | 'analytics'
+  | 'strategy'
+  | 'predictor'
+  | 'data'
+  | 'spoofing'
+  | 'network'
+  | 'oiscanner'
+  | 'oipulse'       // ← ⚡ OI Pulse — Activity Intelligence tab
+  | 'intelligence'; // ← 🧠 Intelligence Engine tab

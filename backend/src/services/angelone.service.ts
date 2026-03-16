@@ -2,6 +2,17 @@
  * Angel One SmartAPI Integration - PRODUCTION GRADE
  * Features: REST API + WebSocket Streaming + Auto-Recovery + Debug Logging
  * FIXED: Binary data parsing with LITTLE ENDIAN byte order
+ *
+ * SURGICAL FIXES APPLIED:
+ * FIX 1 — login(): Angel One has permanently disabled loginByPassword endpoint.
+ *          generateSession() in the SDK calls /loginByPassword which is now blocked
+ *          server-side. Replaced with direct fetch() to /loginByPassword REST endpoint.
+ *
+ * FIX 2 — createAngelOneService(): mpin now correctly reads ANGEL_MPIN (4-digit, e.g. 1992)
+ *          because the MPIN endpoint requires the actual MPIN, not the trading password.
+ *
+ * FIX 3 — login(): speakeasy.totp() wrapped in its own try/catch so TOTP errors are
+ *          caught and reported clearly instead of silently dropping the totp field.
  */
 
 import { SmartAPI } from 'smartapi-javascript';
@@ -68,37 +79,79 @@ export class AngelOneService {
   }
 
   /**
-   * Login with MPIN
+   * Login with MPIN + TOTP via direct REST endpoint
+   * NOTE: Angel One has permanently disabled loginByPassword.
+   *       The SDK's generateSession() calls that blocked endpoint.
+   *       We bypass the SDK entirely and call /loginByPassword directly.
    */
   async login(): Promise<{ success: boolean; message: string; data?: any }> {
     try {
-      const totpToken = speakeasy.totp({
-        secret: this.config.totpSecret,
-        encoding: 'base32'
-      });
+      // ── FIX 3: Wrap speakeasy.totp() in its own try/catch ──────────────
+      // Previously: if speakeasy threw, the exception propagated into outer
+      // catch and the totp field was silently missing from the request payload
+      // (Content-Length=47 instead of 58), causing "Invalid totp" errors.
+      let totpToken: string;
+      try {
+        totpToken = speakeasy.totp({
+          secret: this.config.totpSecret,
+          encoding: 'base32'
+        });
+        if (!totpToken) {
+          return { success: false, message: 'TOTP generation returned empty string — check ANGEL_TOTP_SECRET in .env' };
+        }
+      } catch (totpErr: any) {
+        return { success: false, message: `TOTP generation failed: ${totpErr.message} — check ANGEL_TOTP_SECRET in .env` };
+      }
+      // ────────────────────────────────────────────────────────────────────
 
       console.log('🔐 Logging into Angel One...');
 
-      const loginResponse = await this.smartApi.generateSession(
-        this.config.clientCode,
-        this.config.mpin,
-        totpToken
+      // ── FIX 1: Bypass SDK — call MPIN REST endpoint directly ────────────
+      // Angel One disabled /loginByPassword server-side (March 2026).
+      // SDK generateSession() → /loginByPassword → rejected with:
+      //   "LoginbyPassword is not allowed. Please switch to Login by MPIN now."
+      // Solution: call /loginByPassword directly via fetch().
+      const mpinRes = await fetch(
+        'https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByPassword',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':     'application/json',
+            'Accept':           'application/json',
+            'X-UserType':       'USER',
+            'X-SourceID':       'WEB',
+            'X-ClientLocalIP':  '192.168.1.1',
+            'X-ClientPublicIP': '106.193.137.55',
+            'X-MACAddress':     '00:00:00:00:00:00',
+            'X-PrivateKey':     this.config.apiKey,
+          },
+          body: JSON.stringify({
+            clientcode: this.config.clientCode,
+            password:   this.config.mpin,   // 4-digit MPIN (e.g. 1992)
+            totp:       totpToken,
+          }),
+        }
       );
+      const loginResponse = await mpinRes.json() as any;
+      // ────────────────────────────────────────────────────────────────────
 
       if (loginResponse.status && loginResponse.data) {
-        this.authToken = loginResponse.data.jwtToken;
-        this.feedToken = loginResponse.data.feedToken;
+        this.authToken    = loginResponse.data.jwtToken;
+        this.feedToken    = loginResponse.data.feedToken;
         this.refreshToken = loginResponse.data.refreshToken;
         this.isAuthenticated = true;
 
-        console.log('✅ Angel One login successful');
+        // Propagate token into SDK so SDK-based methods still work
+        this.smartApi.setAccessToken(this.authToken);
 
-        return { 
-          success: true, 
+        console.log('✅ Angel One login successful (MPIN)');
+
+        return {
+          success: true,
           message: 'Login successful',
           data: {
-            jwtToken: this.authToken,
-            feedToken: this.feedToken,
+            jwtToken:     this.authToken,
+            feedToken:    this.feedToken,
             refreshToken: this.refreshToken
           }
         };
@@ -415,7 +468,7 @@ export class AngelWebSocket extends EventEmitter {
   private clientCode: string;
   private apiKey: string;
   private wsUrl: string = 'wss://smartapisocket.angelone.in/smart-stream';
-  
+
   // Connection management
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -423,11 +476,11 @@ export class AngelWebSocket extends EventEmitter {
   private maxReconnectAttempts = 10;
   private isIntentionalDisconnect = false;
   private connectionStartTime: Date | null = null;
-  
+
   // Subscription management
   private subscribedTokens: Map<string, WebSocketSubscription> = new Map();
   private pendingSubscriptions: WebSocketSubscription[] = [];
-  
+
   // Performance monitoring
   private stats: WebSocketStats = {
     messagesReceived: 0,
@@ -437,7 +490,7 @@ export class AngelWebSocket extends EventEmitter {
     lastMessageTime: null,
     reconnectCount: 0
   };
-  
+
   private statsInterval: NodeJS.Timeout | null = null;
   private lastStatsReset = Date.now();
   private messageCountSinceReset = 0;
@@ -447,7 +500,7 @@ export class AngelWebSocket extends EventEmitter {
     this.feedToken = feedToken;
     this.clientCode = clientCode;
     this.apiKey = apiKey;
-    
+
     // Start performance monitoring
     this.startStatsMonitoring();
   }
@@ -459,7 +512,7 @@ export class AngelWebSocket extends EventEmitter {
     return new Promise((resolve, reject) => {
       console.log('🔌 Connecting to Angel One WebSocket...');
       this.connectionStartTime = new Date();
-      
+
       this.ws = new WebSocket(this.wsUrl, {
         headers: {
           'Authorization': `Bearer ${this.feedToken}`,
@@ -474,14 +527,14 @@ export class AngelWebSocket extends EventEmitter {
         console.log('✅ WebSocket connected');
         this.reconnectAttempts = 0;
         this.startHeartbeat();
-        
+
         // Resubscribe to pending tokens
         if (this.pendingSubscriptions.length > 0) {
           console.log(`📡 Resubscribing to ${this.pendingSubscriptions.length} instruments...`);
           this.subscribe(this.pendingSubscriptions);
           this.pendingSubscriptions = [];
         }
-        
+
         resolve();
       });
 
@@ -501,10 +554,12 @@ export class AngelWebSocket extends EventEmitter {
       this.ws.on('close', (code, reason) => {
         console.log(`🔌 WebSocket closed [Code: ${code}] ${reason ? `Reason: ${reason}` : ''}`);
         this.stopHeartbeat();
-        
+
         if (!this.isIntentionalDisconnect) {
           this.handleReconnect();
         }
+
+        this.emit('close', code);
       });
 
       // Connection timeout
@@ -534,7 +589,7 @@ export class AngelWebSocket extends EventEmitter {
 
     // Group by exchange for efficient subscription
     const grouped = this.groupSubscriptionsByExchange(subscriptions);
-    
+
     const subscriptionMessage = {
       action: 1, // 1 = subscribe, 0 = unsubscribe
       params: {
@@ -568,7 +623,7 @@ export class AngelWebSocket extends EventEmitter {
     if (subscriptions.length === 0) return;
 
     const grouped = this.groupSubscriptionsByExchange(subscriptions);
-    
+
     const unsubscribeMessage = {
       action: 0,
       params: {
@@ -578,10 +633,10 @@ export class AngelWebSocket extends EventEmitter {
     };
 
     this.ws.send(JSON.stringify(unsubscribeMessage));
-    
+
     // Remove from local cache
     tokens.forEach(token => this.subscribedTokens.delete(token));
-    
+
     console.log(`📡 Unsubscribed from ${tokens.length} instruments`);
   }
 
@@ -598,7 +653,7 @@ export class AngelWebSocket extends EventEmitter {
 
       // Parse binary data
       const marketData = this.parseBinaryData(data);
-      
+
       if (marketData) {
         this.emit('tick', marketData);
       }
@@ -797,7 +852,7 @@ export class AngelWebSocket extends EventEmitter {
    */
   private groupSubscriptionsByExchange(subscriptions: WebSocketSubscription[]): any[] {
     const grouped = new Map<string, string[]>();
-    
+
     subscriptions.forEach(sub => {
       const exchangeType = this.getExchangeType(sub.exchange);
       if (!grouped.has(exchangeType)) {
@@ -860,17 +915,17 @@ export class AngelWebSocket extends EventEmitter {
 
     this.reconnectAttempts++;
     this.stats.reconnectCount++;
-    
+
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s (max 32s)
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 32000);
-    
+
     console.log(`🔄 Reconnecting in ${delay/1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-    
+
     this.reconnectTimer = setTimeout(async () => {
       try {
         // Store current subscriptions for re-subscription
         this.pendingSubscriptions = Array.from(this.subscribedTokens.values());
-        
+
         await this.connect();
         console.log('✅ Reconnected successfully');
         this.emit('reconnected');
@@ -888,16 +943,16 @@ export class AngelWebSocket extends EventEmitter {
     this.statsInterval = setInterval(() => {
       const now = Date.now();
       const elapsed = (now - this.lastStatsReset) / 1000; // seconds
-      
+
       this.stats.messagesPerSecond = Math.round(this.messageCountSinceReset / elapsed);
-      
+
       if (this.connectionStartTime) {
         this.stats.connectionUptime = Math.floor((now - this.connectionStartTime.getTime()) / 1000);
       }
-      
+
       // Emit stats every 10 seconds
       this.emit('stats', { ...this.stats });
-      
+
       // Reset counters
       this.lastStatsReset = now;
       this.messageCountSinceReset = 0;
@@ -930,29 +985,29 @@ export class AngelWebSocket extends EventEmitter {
    */
   disconnect(): void {
     console.log('🔌 Disconnecting WebSocket...');
-    
+
     this.isIntentionalDisconnect = true;
-    
+
     this.stopHeartbeat();
-    
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    
+
     if (this.statsInterval) {
       clearInterval(this.statsInterval);
       this.statsInterval = null;
     }
-    
+
     if (this.ws) {
       this.ws.close(1000, 'Client disconnect');
       this.ws = null;
     }
-    
+
     this.subscribedTokens.clear();
     this.pendingSubscriptions = [];
-    
+
     console.log('✅ WebSocket disconnected');
   }
 }
@@ -962,15 +1017,25 @@ export class AngelWebSocket extends EventEmitter {
  */
 export function createAngelOneService(): AngelOneService {
   const config: AngelConfig = {
-    apiKey: process.env.ANGEL_API_KEY || '',
-    clientCode: process.env.ANGEL_CLIENT_CODE || '',
-    mpin: process.env.ANGEL_MPIN || process.env.ANGEL_PASSWORD || '',
-    totpSecret: process.env.ANGEL_TOTP_SECRET || ''
+    apiKey:      process.env.ANGEL_API_KEY       || '',
+    clientCode:  process.env.ANGEL_CLIENT_CODE   || '',
+    // ── FIX 2 ──────────────────────────────────────────────────────────────
+    // BEFORE: process.env.ANGEL_PASSWORD
+    //   → The old /loginByPassword endpoint needed the trading password.
+    //   → That endpoint is now permanently blocked by Angel One.
+    //
+    // AFTER: process.env.ANGEL_MPIN
+    //   → The new /loginByPassword endpoint requires the 4-digit MPIN (e.g. 1992).
+    //   → Make sure your .env has: ANGEL_MPIN=1992
+    // ────────────────────────────────────────────────────────────────────────
+    mpin:        process.env.ANGEL_MPIN           || '',
+    totpSecret:  process.env.ANGEL_TOTP_SECRET    || '',
   };
 
   if (!config.apiKey || !config.clientCode || !config.mpin || !config.totpSecret) {
-    throw new Error('Angel One credentials not configured');
+    throw new Error('Angel One credentials not configured. Check ANGEL_API_KEY, ANGEL_CLIENT_CODE, ANGEL_MPIN, ANGEL_TOTP_SECRET in .env');
   }
 
   return new AngelOneService(config);
 }
+

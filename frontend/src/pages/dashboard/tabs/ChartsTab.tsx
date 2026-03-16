@@ -1,7 +1,7 @@
 // ============================================================================
 // tabs/ChartsTab.tsx — OI Distribution, IV Smile, Greeks Heatmap, PCR, Hist IV
 // ============================================================================
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { ChainRow, DashData } from '../../types';
 import { n, fmt, fmtK, ivColor } from '../shared/helpers';
@@ -275,4 +275,5 @@ export function ChartsTab({ data }: { data: DashData }) {
     </div>
   );
 }
+
 

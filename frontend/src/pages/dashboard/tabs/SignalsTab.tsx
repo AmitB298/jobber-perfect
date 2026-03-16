@@ -1,7 +1,8 @@
 // ============================================================================
 // tabs/SignalsTab.tsx — Trading Signals + Strategy Alerts
 // ============================================================================
-import { SignalData } from '../../types';
+import { useState } from 'react';
+import { SignalData, Signal } from '../../types';
 import { n } from '../shared/helpers';
 
 function SignalCard({ signal }: { signal: any }) {
@@ -47,39 +48,34 @@ function TradingSignalsPanel({ signals }: { signals: any[] }) {
   );
 }
 
-// ============================================================================
-// IV ANALYSIS PANEL
-// ============================================================================
-
 // ── SignalsTab wrapper ─────────────────────────────────────────────────────
 export function SignalsTab({ signalData, ivSource, ivPoints }: { signalData: SignalData | null; ivSource?: string; ivPoints: number }) {
   return (
-          <div className="p-4 grid grid-cols-2 gap-4 overflow-y-auto h-full">
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-300">🎯 Trading Signals</h3>
-                {ivSource && <span className={`text-xs px-2 py-0.5 rounded font-bold ${ivSource === 'real_db' ? 'bg-green-900/60 text-green-400' : 'bg-yellow-900/60 text-yellow-400'}`}>{ivSource === 'real_db' ? `📊 Real IV (${ivPoints}pts)` : `⚠️ Est. IV`}</span>}
+    <div className="p-4 grid grid-cols-2 gap-4 overflow-y-auto h-full">
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-300">🎯 Trading Signals</h3>
+          {ivSource && <span className={`text-xs px-2 py-0.5 rounded font-bold ${ivSource === 'real_db' ? 'bg-green-900/60 text-green-400' : 'bg-yellow-900/60 text-yellow-400'}`}>{ivSource === 'real_db' ? `📊 Real IV (${ivPoints}pts)` : `⚠️ Est. IV`}</span>}
+        </div>
+        <TradingSignalsPanel signals={signalData?.signals ?? []} />
+      </div>
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <h3 className="text-sm font-semibold text-gray-300 mb-3">🔔 Strategy Alerts</h3>
+        {signalData?.signals?.length ? (
+          <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 400 }}>
+            {signalData.signals.map((s: Signal) => (
+              <div key={s.id} className={`flex items-start gap-3 p-3 rounded-lg border ${s.priority === 'HIGH' ? 'border-red-500/40 bg-red-950/20' : s.priority === 'MEDIUM' ? 'border-yellow-500/40 bg-yellow-950/20' : 'border-gray-700 bg-gray-900/50'}`}>
+                <div className="text-xl mt-0.5">{s.type === 'IV_CRUSH' ? '🔥' : s.type === 'IV_EXPANSION' ? '🚀' : s.type === 'DELTA_NEUTRAL' ? '⚖️' : s.type === 'THETA_DECAY' ? '⏳' : '🎯'}</div>
+                <div className="flex-1"><div className="text-sm font-bold text-white">{s.strategy}</div><div className="text-xs text-gray-400 mt-0.5">{s.action}</div><div className="text-xs text-green-400 mt-1">{s.expectedProfit}</div></div>
+                <div className="text-right"><div className="text-xs font-bold text-white">{n(s.confidence)}%</div><div className="text-xs text-gray-500">confidence</div></div>
               </div>
-              <TradingSignalsPanel signals={signalData?.signals ?? []} />
-            </div>
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <h3 className="text-sm font-semibold text-gray-300 mb-3">🔔 Strategy Alerts</h3>
-              {signalData?.signals?.length ? (
-                <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 400 }}>
-                  {signalData.signals.map(s => (
-                    <div key={s.id} className={`flex items-start gap-3 p-3 rounded-lg border ${s.priority === 'HIGH' ? 'border-red-500/40 bg-red-950/20' : s.priority === 'MEDIUM' ? 'border-yellow-500/40 bg-yellow-950/20' : 'border-gray-700 bg-gray-900/50'}`}>
-                      <div className="text-xl mt-0.5">{s.type === 'IV_CRUSH' ? '🔥' : s.type === 'IV_EXPANSION' ? '🚀' : s.type === 'DELTA_NEUTRAL' ? '⚖️' : s.type === 'THETA_DECAY' ? '⏳' : '🎯'}</div>
-                      <div className="flex-1"><div className="text-sm font-bold text-white">{s.strategy}</div><div className="text-xs text-gray-400 mt-0.5">{s.action}</div><div className="text-xs text-green-400 mt-1">{s.expectedProfit}</div></div>
-                      <div className="text-right"><div className="text-xs font-bold text-white">{n(s.confidence)}%</div><div className="text-xs text-gray-500">confidence</div></div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-10 text-gray-500"><div className="text-3xl mb-3">🔕</div><div className="text-sm">No strategy setups detected</div></div>
-              )}
-            </div>
+            ))}
           </div>
+        ) : (
+          <div className="text-center py-10 text-gray-500"><div className="text-3xl mb-3">🔕</div><div className="text-sm">No strategy setups detected</div></div>
         )}
+      </div>
+    </div>
   );
 }
 

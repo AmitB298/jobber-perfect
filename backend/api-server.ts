@@ -1,4 +1,4 @@
-/**
+﻿/**
  * api-server.ts — JOBBER PRO — 35 ENDPOINTS
  *
  * ════ FIX R — spotChange showing 0.00 (FIXED) ════════════════════════════════
@@ -6,10 +6,23 @@
  *   current). Since ticks arrive every 500ms, prevSpot ≈ spotPrice → change = 0.
  *   FIX: daily_close table stores official NSE close per day. refreshCache()
  *   reads yesterday's close_price. Auto-saved at 3:31 PM IST daily.
- *   FALLBACK: daily_close → last tick before today midnight IST → spotPrice (0 change)
+ *   FALLBACK: daily_close → last tick before today midnight IST → 0 (show –)
  *
  * ════ FIX Q — Wrong LTP (weekly vs monthly expiry) ═══════════════════════════
  *   FIX: AND expiry_date = $3 added to both chain queries.
+ *
+ * ════ FIX S — OI Scanner routes registered (v7.5) ═══════════════════════════
+ *   Added: import { registerOIScannerRoutes } from './oi-scanner-routes'
+ *   Added: registerOIScannerRoutes(app, pool) before httpServer.listen
+ *
+ * ════ FIX 1 — buildGreeksPayload: timestamp + source fields ══════════════════
+ *   Added: timestamp (ISO) so frontend can calculate push latency
+ *   Added: source: 'live_push' so frontend knows this is a real push vs REST
+ *
+ * ════ FIX 2 — prevClose guard: never fall back to spotPrice ══════════════════
+ *   BEFORE: prevClose = spotPrice → spotChange = 0 always (misleading)
+ *   AFTER:  prevClose = 0 → spotChange = 0, spotChangePercent = 0
+ *           UI shows – instead of 0.00% when baseline is genuinely unknown
  * ════════════════════════════════════════════════════════════════════════════
  */
 
@@ -26,6 +39,8 @@ import {
   findDeltaNeutralOpportunities, findThetaDecayOpportunities, findGammaScalpSetups
 } from './signals-engine';
 import { PremiumPredictor } from './premium-prediction-engine';
+import { registerOIScannerRoutes } from './oi-scanner-routes';
+import { registerOIPulseRoutes } from './oi-pulse-routes';
 
 const app  = express();
 const port = 3001;
@@ -318,7 +333,7 @@ const FALLBACK_CHAIN_QUERY = `
 `;
 
 // ============================================================================
-// ★ FIX R — refreshCache uses daily_close for correct spotChange
+// ★ FIX R + FIX 2 — refreshCache with correct prevClose guard
 // ============================================================================
 async function refreshCache(): Promise<void> {
   if (cacheRefreshing) return;
@@ -328,7 +343,7 @@ async function refreshCache(): Promise<void> {
       pool.query(`SELECT ltp as spot_price, timestamp FROM nifty_premium_tracking.market_data WHERE symbol='NIFTY' ORDER BY timestamp DESC LIMIT 1`),
       pool.query(`SELECT COUNT(*) as total_ticks FROM nifty_premium_tracking.options_data`),
       pool.query(`SELECT MAX(timestamp) as latest_ts FROM nifty_premium_tracking.options_data`),
-      // ✅ FIX R: fetch official previous close from daily_close table
+      // FIX R: fetch official previous close from daily_close table
       pool.query(
         `SELECT close_price as prev_close
          FROM nifty_premium_tracking.daily_close
@@ -343,11 +358,13 @@ async function refreshCache(): Promise<void> {
     const latestDataAt = latestTsRes.rows[0]?.latest_ts ? new Date(latestTsRes.rows[0].latest_ts) : null;
     const dataAgeMs    = latestDataAt ? Date.now() - latestDataAt.getTime() : 999999;
 
-    // ✅ FIX R: 3-level fallback for prevClose
+    // ✅ FIX 2: 3-level fallback — NEVER use spotPrice as baseline.
+    // If prevClose is unknown, keep it 0 and show 0 change rather than
+    // the old bug where prevClose = spotPrice → change = 0 every tick.
     let prevClose = Number(prevCloseRes.rows[0]?.prev_close) || 0;
     if (prevClose <= 0) {
       try {
-        // Fallback: last market_data tick from a previous calendar day in IST
+        // Fallback 2: last market_data tick from a previous calendar day in IST
         const fbRes = await pool.query(
           `SELECT ltp as prev_close
            FROM nifty_premium_tracking.market_data
@@ -355,9 +372,10 @@ async function refreshCache(): Promise<void> {
              AND timestamp < (DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')
            ORDER BY timestamp DESC LIMIT 1`
         );
-        prevClose = Number(fbRes.rows[0]?.prev_close) || spotPrice;
+        // ✅ FIX 2: stay at 0 if still nothing found — do NOT fall back to spotPrice
+        prevClose = Number(fbRes.rows[0]?.prev_close) || 0;
       } catch (_) {
-        prevClose = spotPrice; // last resort — show 0 change rather than crash
+        prevClose = 0; // ✅ FIX 2: 0, not spotPrice
       }
     }
 
@@ -387,11 +405,11 @@ async function refreshCache(): Promise<void> {
     pool.query(`SELECT COALESCE(SUM(CASE WHEN option_type='PE' THEN volume ELSE 0 END)::NUMERIC/NULLIF(SUM(CASE WHEN option_type='CE' THEN volume ELSE 0 END),0),0) as v FROM nifty_premium_tracking.options_data WHERE timestamp > NOW() - INTERVAL '5 minutes'`)
       .then(r => { pcr_volume = Number(r.rows[0]?.v) || 1; }).catch(() => {});
 
-    const chainWithGreeks = calculateChainGreeks(optsRows, spotPrice, expiryDate);
+    const chainWithGreeks = calculateChainGreeks(optsRows, spotPrice, expiryDate, latestDataAt ?? undefined);
     const maxPain         = calcMaxPain(chainWithGreeks, atmStrike);
 
-    // ✅ FIX R: correct daily change
-    const spotChange        = spotPrice - prevClose;
+    // ✅ FIX 2: guard — only calculate change when prevClose is a real value
+    const spotChange        = prevClose > 0 ? spotPrice - prevClose : 0;
     const spotChangePercent = prevClose > 0 ? (spotChange / prevClose) * 100 : 0;
     const marketStatus      = getMarketStatus(latestDataAt);
 
@@ -430,20 +448,31 @@ async function refreshCache(): Promise<void> {
 setInterval(refreshCache, 500);
 refreshCache();
 
+// ✅ FIX 1: buildGreeksPayload now includes timestamp + source
+// timestamp — ISO string of server send time, used by frontend to compute push latency
+// source    — 'live_push' so frontend can distinguish SSE from REST fallback poll
 function buildGreeksPayload() {
   if (!cache) return null;
   return {
-    spotPrice: cache.spotPrice, spotChange: cache.spotChange,
-    spotChangePercent: cache.spotChangePercent,
-    atmStrike: cache.atmStrike, chainWithGreeks: cache.chainWithGreeks,
-    chain: cache.chainWithGreeks,
-    expiryDate: cache.expiryDate.toISOString(),
-    pcr_oi: cache.pcr_oi, pcr_volume: cache.pcr_volume,
-    maxPain: cache.maxPain, totalTicks: cache.totalTicks,
-    latestDataAt: cache.latestDataAt,
-    refreshedAt: cache.refreshedAt.toISOString(),
-    dataAgeMs: cache.dataAgeMs,
-    marketStatus: cache.marketStatus,
+    spotPrice:          cache.spotPrice,
+    spotChange:         cache.spotChange,
+    spotChangePercent:  cache.spotChangePercent,
+    atmStrike:          cache.atmStrike,
+    chainWithGreeks:    cache.chainWithGreeks,
+    chain:              cache.chainWithGreeks,
+    expiryDate:         cache.expiryDate.toISOString(),
+    pcr_oi:             cache.pcr_oi,
+    pcr_volume:         cache.pcr_volume,
+    maxPain:            cache.maxPain,
+    totalTicks:         cache.totalTicks,
+    latestDataAt:       cache.latestDataAt,
+    refreshedAt:        cache.refreshedAt.toISOString(),
+    dataAgeMs:          cache.dataAgeMs,
+    marketStatus:       cache.marketStatus,
+    // ✅ FIX 1A: server-side send time — lets frontend measure end-to-end push latency
+    timestamp:          new Date().toISOString(),
+    // ✅ FIX 1B: source tag — frontend uses this to distinguish live push vs REST poll
+    source:             'live_push' as const,
   };
 }
 
@@ -539,6 +568,7 @@ class WsEmitter {
       });
       ws.on('close', () => { this.clients.delete(id); console.log(`WS client disconnected: ${id} | remaining: ${this.clients.size}`); });
       ws.on('error', () => this.clients.delete(id));
+      // ✅ FIX 1: send initial payload with timestamp+source on connection
       if (cache) { try { ws.send(JSON.stringify({ type: 'chain', data: buildGreeksPayload(), ts: Date.now() })); } catch (_) {} }
       console.log(`WS client connected: ${id} | total: ${this.clients.size}`);
     });
@@ -573,9 +603,7 @@ app.post('/api/tick/ingest', (req, res) => {
   try {
     const tick: LiveTick = req.body;
     if (!tick?.token) return res.status(400).json({ error: 'token required' });
-    // ════ FIX S — DIAGNOSTIC LOG: reveals raw LTP value from Angel One ════
     if (tick.symbol?.includes('NIFTY') && Math.random() < 0.01) console.log(`🔍 RAW LTP: ${tick.symbol} | ltp=${tick.ltp} | type=${typeof tick.ltp} | token=${tick.token}`);
-    // ════════════════════════════════════════════════════════════════════════
     tickStore.set(tick.token, { ...tick, timestamp: Date.now() });
     wsEmitter.broadcastTick(tick.token, tick);
     if (tick.symbol === 'NIFTY' || tick.symbol === 'BANKNIFTY') wsEmitter.broadcastSpot(tick.symbol, tick.ltp);
@@ -750,7 +778,17 @@ app.get('/api/options/greeks', async (_, res) => {
   try {
     const c = await waitForCache();
     setImmediate(() => storeIVHistory(c.chainWithGreeks, c.spotPrice, c.atmStrike, c.expiryDate));
-    res.json({ success: true, data: { spotPrice: c.spotPrice, spotChange: c.spotChange, spotChangePercent: c.spotChangePercent, atmStrike: c.atmStrike, pcr_oi: c.pcr_oi, pcr_volume: c.pcr_volume, maxPain: c.maxPain, totalTicks: c.totalTicks, chain: c.chainWithGreeks, expiryDate: c.expiryDate.toISOString(), latestDataAt: c.latestDataAt, marketStatus: c.marketStatus, refreshedAt: c.refreshedAt.toISOString(), dataAgeMs: c.dataAgeMs } });
+    // ✅ FIX 1: REST endpoint also returns timestamp + source (source = 'rest_poll')
+    res.json({ success: true, data: {
+      spotPrice: c.spotPrice, spotChange: c.spotChange, spotChangePercent: c.spotChangePercent,
+      atmStrike: c.atmStrike, pcr_oi: c.pcr_oi, pcr_volume: c.pcr_volume,
+      maxPain: c.maxPain, totalTicks: c.totalTicks, chain: c.chainWithGreeks,
+      expiryDate: c.expiryDate.toISOString(), latestDataAt: c.latestDataAt,
+      marketStatus: c.marketStatus, refreshedAt: c.refreshedAt.toISOString(),
+      dataAgeMs: c.dataAgeMs,
+      timestamp: new Date().toISOString(),  // ✅ FIX 1
+      source: 'rest_poll' as const,         // ✅ FIX 1: different source tag for REST
+    }});
   } catch (e) { console.error('Greeks error:', e); res.status(500).json({ success: false, error: String(e) }); }
 });
 
@@ -794,6 +832,7 @@ app.get('/api/stream/live', (req, res) => {
 app.get('/api/stream/chain', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream'); res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive'); res.setHeader('Access-Control-Allow-Origin', '*');
+  // ✅ FIX 1: initial payload now includes timestamp + source
   if (cache) res.write(`data: ${JSON.stringify(buildGreeksPayload())}\n\n`);
   SSE_CLIENTS.add(res);
   const ka = setInterval(() => { try { res.write(': ping\n\n'); } catch (_) {} }, 30_000);
@@ -1162,8 +1201,6 @@ app.get('/api/spoofing/hotstrikes', async (_req, res) => {
 // ============================================================================
 // ★ ADMIN ENDPOINTS — daily_close management (FIX R)
 // ============================================================================
-
-// POST /api/admin/set-close  body: { date?: "2026-03-04", close: 24865.70 }
 app.post('/api/admin/set-close', async (req, res) => {
   try {
     const { date, close } = req.body;
@@ -1181,7 +1218,6 @@ app.post('/api/admin/set-close', async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/admin/close-history — view stored close prices
 app.get('/api/admin/close-history', async (_req, res) => {
   try {
     const r = await pool.query(
@@ -1194,13 +1230,18 @@ app.get('/api/admin/close-history', async (_req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/admin/save-close-now — manually trigger close save (don't wait for 3:31pm)
 app.post('/api/admin/save-close-now', async (_req, res) => {
   try {
     await saveDailyClose();
     res.json({ success: true, message: 'Daily close saved from current NIFTY LTP' });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
+
+// ============================================================================
+// ── OI SCANNER + OI PULSE ROUTES
+// ============================================================================
+registerOIScannerRoutes(app, pool);
+registerOIPulseRoutes(app, pool);
 
 // ============================================================================
 // START SERVER
@@ -1221,8 +1262,10 @@ httpServer.listen(port, () => {
 ║  Port: ${port}  |  Database: jobber_pro  |  Cache: 500ms refresh   ║
 ╠════════════════════════════════════════════════════════════════════╣
 ║  ✅ FIX R: spotChange uses daily_close (official NSE prev close)   ║
-║     Auto-saved @ 3:31 PM IST · Admin endpoints for manual control ║
+║  ✅ FIX 2: prevClose guard — never falls back to spotPrice         ║
+║  ✅ FIX 1: payload has timestamp + source fields                   ║
 ║  ✅ FIX Q: expiry_date filter — weekly LTPs only                   ║
+║  ✅ FIX S: OI Scanner + OI Pulse routes registered                 ║
 ╠════════════════════════════════════════════════════════════════════╣
 ║  ⚡ PERFORMANCE:                                                    ║
 ║  ✅ In-memory cache (500ms) — REST < 1ms                           ║
@@ -1245,5 +1288,3 @@ httpServer.listen(port, () => {
 ╚════════════════════════════════════════════════════════════════════╝
   `);
 });
-
-

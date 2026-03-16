@@ -1,8 +1,7 @@
 // ============================================================================
 // tabs/SpoofingTab.tsx — Live Spoofing Detection
 // ============================================================================
-import { useState, useEffect, useRef } from 'react';
-import { n, fmt } from '../shared/helpers';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 
 type SpoofState = 'CLEAR' | 'WATCH' | 'ALERT' | 'CRITICAL';
 type SpoofPhase = 'PATCH_I' | 'PATCH_II' | 'CLOSE_WATCH' | 'NORMAL';
@@ -149,7 +148,7 @@ export function SpoofingTab() {
           if (d.type === 'connected') return;
           const state = d.state as SpoofState;
           if (!state || state === 'CLEAR') return;
-          setTotalRx(n => n + 1);
+          setTotalRx(prev => prev + 1);
           const alert: LiveSpoofAlert = {
             id: `${d.token ?? d.symbol ?? '?'}_${d.detectedAt ?? Date.now()}`,
             token: d.token ?? `${d.strike}_${d.optionType}`, symbol: d.symbol ?? `NIFTY${d.strike}${d.optionType}`,
@@ -222,7 +221,3 @@ export function SpoofingTab() {
     </div>
   );
 }
-
-// ============================================================================
-// MAIN DASHBOARD COMPONENT
-// ============================================================================

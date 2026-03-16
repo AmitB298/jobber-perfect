@@ -344,17 +344,31 @@ export function getMonthlyNiftyExpiry(year: number, month: number): Date {
  *  - All numeric DB fields converted to Number
  *  - ce_greeks/pe_greeks = undefined (not null) when IV unsolvable
  *  - T has a 1-hour floor to prevent div-by-zero on expiry day morning
+ *
+ * @param dataAsOf  CRITICAL — timestamp when the LTPs in `chain` were captured.
+ *                  T must be measured from when the price was observed, NOT
+ *                  from wall-clock now. Without this, weekend/stale data
+ *                  produces inflated IV (e.g. 26.9% instead of correct 22.2%)
+ *                  because T shrinks while LTPs stay frozen.
+ *
+ *                  Pass: lastTickAt from websocket-collector hot cache, or
+ *                        MAX(updated_at) from the DB chain query.
+ *                  Omit: defaults to new Date() — correct during live market
+ *                        when data age is seconds, not hours.
  */
 export function calculateChainGreeks(
   chain: any[],
   spotPrice: number,
-  expiryDate: Date
+  expiryDate: Date,
+  dataAsOf?: Date   // ← FIX: anchor T to when LTPs were captured, not wall-clock
 ): OptionWithGreeks[] {
-  const now = new Date();
+  // Use dataAsOf when provided — correct T anchor for stale/cached data.
+  // Falls back to new Date() for live market (data age is negligible).
+  const refTime = dataAsOf ?? new Date();
 
   // Minimum T = 1 hour → prevents extreme/infinite Greeks on expiry morning
   const T = Math.max(
-    (expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * DAYS_PER_YEAR),
+    (expiryDate.getTime() - refTime.getTime()) / (1000 * 60 * 60 * 24 * DAYS_PER_YEAR),
     1 / (24 * DAYS_PER_YEAR)
   );
 

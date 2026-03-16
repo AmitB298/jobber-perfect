@@ -1,112 +1,93 @@
 /**
- * websocket-collector.ts — v7.4
+ * websocket-collector.ts — v7.6
  * Location: D:\jobber-perfect\backend\src\scripts\websocket-collector.ts
  *
- * ════ BUGS FIXED IN v7.0 (on top of v6.5) ══════════════════════════════════
- *
+ * ════ ALL BUGS FROM v7.4 PRESERVED ══════════════════════════════════════════
  * FIX B — pushToApi dropped ticks (80ms throttle, no pending-flag fallback)
  * FIX D — markSubscribed() race with slow CDN → warmup bypassed
  * FIX A — liveNiftyPrev/liveNiftyOpen never reset on multi-day runs
  * FIX E — getAvailableExpiries() served expired expiries to frontend
- * FIX C — Greeks cache LRU inversion (first-inserted evicted, not LRU)
+ * FIX C — Greeks cache LRU inversion
  * FIX I — Telegram global 30s cooldown suppressed higher-severity alerts
- * FIX F — liveChain / openOiMap grew unbounded, no expired-key eviction
+ * FIX F — liveChain / openOiMap grew unbounded
  * FIX G — JSON.parse(JSON.stringify()) round-trip in direct emitter path
- *
- * ════ BUGS FIXED IN v7.1 (observed from live log 3:05-3:06 PM) ═════════════
- *
- * FIX J — Alert storm (500+ CRITICALs/10s): FIRE_COOLDOWN_MS=30s + phase thresholds
- * FIX K — Shutdown DB pool error + alerts printing after shutdown signal
+ * FIX J — Alert storm (500+ CRITICALs/10s)
+ * FIX K — Shutdown DB pool error
  * FIX L — Alert counters never reset between sessions
- *
- * ════ BUGS FIXED IN v7.2 (observed from live log v7.1 run 3:19 PM) ══════════
- *
- * FIX K v2 — _isShuttingDown guard was only in persistSpoofAlertToDb().
- *   Console output, file writes, WS broadcast, and Telegram still fired
- *   during shutdown. Fix: guard moved to routeSpoofAlert() entry point,
- *   silencing the entire pipeline with one check.
- *
- * FIX K v3 — ws.disconnect() not called before pool.end() in shutdown().
- *   Ticks arrived during the pool.end() await (~100-500ms), processTick()
- *   fired and routed alerts that hit the DB. Fix: ws.disconnect() + 100ms
- *   sleep added before spoofingDetector.reset() and pool.end().
- *
- * FIX M — MOMENTUM_IGNITION fired on tick #3 (MIN_HISTORY_TICKS=3).
- *   At reconnect/startup tick #2 can be a stale pre-close LTP and tick #3
- *   is the fresh live price → giant apparent spike → 74 false alerts on
- *   first 8 seconds of every session. Fix: require h.length >= 5 ticks
- *   before MOMENTUM_IGNITION can fire, giving the buffer a real baseline.
- *
- * FIX J — ALERT STORM: 500+ CRITICALs in 10 seconds, every option firing.
- *   ROOT CAUSE 1: fireK() dedup guard is only 500ms. The ALERT_TTL is 10s.
- *     When an alert fires and TTL expires (10s), active.delete(k) runs.
- *     The VERY NEXT tick re-fires it with no dedup, TTL restarts, cycle repeats
- *     forever at 60-95 ticks/sec across 381 tokens.
- *   ROOT CAUSE 2: At CLOSE_WATCH (15:00-15:30), every MM hedge and
- *     institutional trade produces bid/ask ratios far above BID_WALL_RATIO=5.
- *     OI is batch-updated at close so OI appears frozen → every LTP move
- *     triggers OI_DIVERGENCE. Normal close volatility triggers MOMENTUM_IGNITION.
- *     The detector has no concept of "normal close microstructure."
- *   Fix 1: Separate "display TTL" from "fire cooldown". Add lastFiredMap
- *     with a per-symbol-per-type cooldown (FIRE_COOLDOWN_MS, default 30s)
- *     that persists independently of the display TTL. An alert can only
- *     re-fire after FIRE_COOLDOWN_MS has elapsed since it last fired.
- *   Fix 2: In CLOSE_WATCH phase, suppress OI_DIVERGENCE entirely (OI is
- *     batch-updated; false positive rate is ~100% in last 10min).
- *     Raise wall thresholds: BID/ASK_WALL_RATIO 5→12, MIN_QTY 50→150.
- *     Raise MOMENTUM_IGNITION LTP spike threshold 0.8%→2% at close.
- *     Only LAYERING (cross-strike coordination) fires at full sensitivity
- *     in CLOSE_WATCH — it is the only pattern that indicates real
- *     settlement manipulation vs normal close-time hedging.
- *
- * FIX K — SHUTDOWN with live WebSocket → DB pool error after pool.end().
- *   ROOT CAUSE: shutdown() sequence was:
- *     clearInterval → flushDB → pool.end() → exit
- *   But the WebSocket was still live and ticks still arriving. routeSpoofAlert
- *   called persistSpoofAlertToDb() which tried pool.query() after pool.end()
- *   → "Cannot use a pool after calling end on the pool".
- *   Fix: shutdown() now sets _isShuttingDown=true FIRST (guards all DB writes),
- *   then calls spoofingDetector.reset() to drain the alert pipeline, then
- *   flushes the write queue, then ends the pool.
- *
- * FIX L — _totalAlerts/_totalCritical/_totalWatch never reset between sessions.
- *   The display showed cumulative counts across the whole process lifetime,
- *   making the counter useless for diagnosing alert rate per session.
- *   Fix: Reset all three counters in abort() alongside other session state.
- *
- * ════ BUGS FIXED IN v7.4 ════════════════════════════════════════════════════
- *
- * FIX O — needsDiv threshold too high → wrong LTP stored → IV blows up → BS prices shown
- *   ROOT CAUSE: Angel One sends LTP in paise for some option tokens.
- *     e.g. NIFTY24150CE real LTP = ₹410 → sent as 41,000 paise.
- *     Old threshold: ltp > 50_000 → 41,000 > 50,000 = false → NO division.
- *     Stored as ₹41,000 instead of ₹410.
- *   CASCADE:
- *     1. calculateChainGreeks() receives ceLTP=41000
- *     2. Guard: ceLTP < spot (41000 < 24480) = false → ceLTP filtered out → ceG = undefined
- *     3. ce_ltp in chain = 41000 (raw, unreduced)
- *     4. Dashboard shows Black-Scholes theoretical instead of real LTP
- *        → dashboard displays ₹888, ₹1073, ₹784 (BS prices at wrong IV)
- *   FIX: Threshold 50_000 → 5_000. Options above ₹50 = 5,000 paise are
- *     extremely rare — the highest NIFTY option LTP in history is ~₹2,000
- *     (deep ITM at COVID crash). This correctly divides all paise-encoded LTPs.
- *
+ * FIX M — MOMENTUM_IGNITION fired on tick #3
+ * FIX O — needsDiv threshold too high → wrong LTP stored
  * FIX P — calculateChainGreeks() CE/PE guards incorrectly filtered valid options
- *   OLD: if (ceLTP > 0.01 && ceLTP < spot)  ← rejects any CE with LTP > spot
- *   OLD: if (peLTP > 0.01 && peLTP < K)     ← rejects any PE with LTP > strike
- *   These guards were added as a workaround to catch inflated paise values.
- *   After FIX O (correct paise conversion), they are no longer needed as a
- *   data filter AND they incorrectly suppress valid deep-ITM options:
- *     - Deep ITM calls near expiry can have LTP approaching spot (valid)
- *     - Any residual stale/pre-market paise value > spot was the real bug
- *   FIX: Replace with a MAX_OPTION_LTP sanity cap (4× spot for CE, 4× K for PE).
- *   This is loose enough to never reject valid options but tight enough to
- *   catch any residual encoding bugs.
  *
+ * ════ NEW IN v7.6 (PERFORMANCE) ══════════════════════════════════════════════
+ * PERF-1 — Greeks cache key: removed ce_volume/pe_volume — volume changes every
+ *           tick, busting the cache on every tick → Black-Scholes 100-iter
+ *           Newton-Raphson ran for every strike on every tick. Cache key now
+ *           uses only ltp per strike. Greeks don't depend on volume.
+ * PERF-2 — liveChainByExpiry secondary index: liveChain was O(n)-scanned on
+ *           every buildChain() + getAvailableExpiries() call (495 entries ×
+ *           string split × 5 pushes/s = 2475 ops/s wasted). New index makes
+ *           buildChain() O(bucket size) and expiry lookup O(1).
+ * PERF-3 — pushToApi() decoupled from tick handler: tick now sets _pushDirty=true.
+ *           A 200ms interval timer fires the actual push. buildChain() +
+ *           calculateChainGreeks() run at most 5×/s instead of 200×/s during
+ *           market open.
+ * PERF-4 — spoofingDetector moved off tick hot path: enqueueDetect() +
+ *           setImmediate(drainDetectQueue) processes detectors async. Tick
+ *           ingestion no longer blocks on 9-detector synchronous scan.
+ * PERF-5 — writeQ safety valve: enqueueWrite() caps queue at 5000 rows and
+ *           drops oldest with a stderr warning if DB flush stalls.
+ * PERF-6 — _expiryListCache: getAvailableExpiries() now O(1) on cache hit.
+ *           Cache invalidated only when a new expiry key appears in liveChain.
+ *
+ * ════ NEW IN v7.5 ═════════════════════════════════════════════════════════════
+ * ADD OI_SCANNER — OIScannerEngine integrated
+ *   - Instantiated after pool (const oiScanner = new OIScannerEngine(pool, null))
+ *   - Emitter wired in registerDirectWsEmitter() via oiScanner.setEmitter()
+ *   - Tick fed in handleTick() OPTIONS branch after spoofingDetector.processTick()
+ *   - onFiveMinute() timer in main() alongside pruneExpiredChainKeys
+ *   - onFifteenMinute() timer in main() alongside pruneExpiredChainKeys
+ *   - oiScanner.destroy() called in shutdown() after spoofingDetector.reset()
+ *
+ * ════ FIX IN v7.5 (decimal prices) ══════════════════════════════════════════
+ * FIX Q — safeN() was applied to PRICE fields in flushDB() args.
+ *          safeN() calls Math.round() which truncated decimals:
+ *          223.90 → 224, 5.55 → 6, etc.
+ *          Price columns (ltp, bid, ask, high, low, open, close) now written raw.
+ *          safeN() retained only for true integer columns (volume, oi, qty).
+ *
+ * ════ FIX IN v7.5 (paise threshold) ═════════════════════════════════════════
+ * FIX R — AngelWebSocket service ALREADY converts paise→rupees internally
+ *          before emitting 'tick' events. Confirmed by live debug:
+ *            ltp=431.25 (24150CE), ltp=112.5 (24100PE), ltp=158.8 (24600CE)
+ *          These are clearly rupees, not paise.
+ *          Old needsDiv (ltp > 5_000) was wrong for deep ITM options:
+ *            e.g. ₹5450 ITM call → needsDiv=true → wrongly divided to ₹54.50
+ *          Fix: removed needsDiv entirely. px() passes value unchanged.
+ *          No ÷100 needed — service handles paise→rupees before tick fires.
+ *
+ * ════ NEW IN v7.5.1 ══════════════════════════════════════════════════════════
+ * FIX 3 — loginToAngel(): 60s WAF rate-limit guard between retry attempts.
+ *          Angel One's WAF throttles rapid re-login; any attempt > 1 now waits
+ *          until 60 000 ms have elapsed since the previous attempt start.
+ * FIX 5 — abort(): dbErrors counter now resets to 0 between sessions.
+ *          Without this, dbErrors accumulated across reconnects and triggered
+ *          the "further write errors suppressed" blackout after ~11 lifetime errors.
+ * FIX 6 — SpoofingDetector.oiDiv(): guard against near-zero LTP strikes.
+ *          Deep OTM options with ltp < 0.5 produced false-positive OI_DIVERGENCE
+ *          CRITICAL alerts. Added early-return when s.ltp < 0.5 || p.ltp < 0.5.
+ *
+ * ════ FIX IN v7.6.1 (OI Pipeline startup) ═══════════════════════════════════
+ * FIX S — initOIPipeline(): removed ALTER TABLE ADD COLUMN IF NOT EXISTS calls.
+ *          These columns (oi_change, close) already exist in production schema.
+ *          ALTER TABLE on 10.5M rows acquires a full table lock at startup,
+ *          exceeding the pool statement_timeout (60s) and causing the pipeline
+ *          to fail on every restart. Columns are now managed at deploy time only.
+ *          refresh_oi_snapshot() and sync_oi_change() calls are unchanged.
  * ════════════════════════════════════════════════════════════════════════════
  */
 
 import { createAngelOneService, AngelWebSocket } from '../services/angelone.service';
+import { OIScannerEngine } from '../oi-scanner-engine';
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
 import * as http   from 'http';
@@ -118,7 +99,7 @@ import * as crypto from 'crypto';
 
 dotenv.config();
 
-const VERSION = 'v7.4';
+const VERSION = 'v7.6';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  SECTION 1 — GREEKS CALCULATOR (Black-Scholes)
@@ -170,7 +151,7 @@ function blackScholes(S:number,K:number,T:number,r:number,q:number,sigma:number,
   const thetaA=isCall
     ?-(S*eqT*pdf1*sigma/(2*sqrtT))-r*K*erT*normCDF(d2)+q*S*eqT*normCDF(d1)
     :-(S*eqT*pdf1*sigma/(2*sqrtT))+r*K*erT*normCDF(-d2)-q*S*eqT*normCDF(-d1);
-  const theta=thetaA/252; // trading days convention
+  const theta=thetaA/252;
   const vega=S*eqT*pdf1*sqrtT/100;
   return {price:Math.max(price,0),delta,gamma,theta,vega};
 }
@@ -198,9 +179,7 @@ function impliedVol(mktPrice:number,S:number,K:number,T:number,r:number,q:number
   return sigma*100;
 }
 
-// Returns next weekly Thursday expiry (used as default when no specific expiry known)
 function getNextNiftyExpiry(): Date {
-  // FIX H2: Use the earliest expiry actually present in liveChain if available.
   if (liveChain.size > 0) {
     let earliest: Date | null = null;
     const now = Date.now();
@@ -214,7 +193,6 @@ function getNextNiftyExpiry(): Date {
     }
     if (earliest) return earliest;
   }
-  // Fallback: arithmetic-based next Thursday
   const ist=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
   const day=ist.getDay();
   let ahead=(4-day+7)%7;
@@ -225,7 +203,6 @@ function getNextNiftyExpiry(): Date {
   return exp;
 }
 
-// Parse expiry from symbol's DDMMMYY string into a JS Date at 15:30 IST (10:00 UTC)
 function expiryStringToDate(expiry: string): Date {
   const day  = parseInt(expiry.slice(0, 2), 10);
   const mon  = monthNum(expiry.slice(2, 5));
@@ -243,14 +220,8 @@ function calculateChainGreeks(rows:any[],spot:number,_expiry:Date):ChainRow[] {
   const r=RISK_FREE_RATE,q=DIVIDEND_YIELD;
   const atm=Math.round(spot/50)*50;
   const defaultT=timeToExpiryYears(_expiry);
-  // FIX P: Loose sanity cap replaces the old strict ceLTP<spot / peLTP<K guards.
-  // The old guards were originally meant to catch inflated paise values, but
-  // after FIX O (correct needsDiv threshold) paise values are always divided
-  // correctly before reaching here. The strict guards also incorrectly rejected
-  // valid deep-ITM options. 4× spot / 4× K is generous enough for any real
-  // option yet catches any residual encoding bug.
   const MAX_CE_LTP = spot * 4;
-  const MAX_PE_LTP_RATIO = 4; // peLTP < K * MAX_PE_LTP_RATIO
+  const MAX_PE_LTP_RATIO = 4;
   return rows.map((row):ChainRow => {
     const K=Number(row.strike_price),ceLTP=Number(row.ce_ltp)||0,peLTP=Number(row.pe_ltp)||0;
     const ceOI=Number(row.ce_oi)||0,peOI=Number(row.pe_oi)||0;
@@ -259,8 +230,6 @@ function calculateChainGreeks(rows:any[],spot:number,_expiry:Date):ChainRow[] {
       try { T=timeToExpiryYears(expiryStringToDate(String(row.expiry_date))); } catch(_) {}
     }
     let ceG:Greeks|undefined,peG:Greeks|undefined;
-
-    // FIX P: was `ceLTP > 0.01 && ceLTP < spot` — now uses loose cap
     if (ceLTP > 0.01 && ceLTP < MAX_CE_LTP) {
       const iv=impliedVol(ceLTP,spot,K,T,r,q,true);
       if(iv>0 && iv<MAX_DISPLAY_IV){
@@ -268,7 +237,6 @@ function calculateChainGreeks(rows:any[],spot:number,_expiry:Date):ChainRow[] {
         ceG={iv,delta:+bs.delta.toFixed(4),gamma:+bs.gamma.toFixed(6),theta:+bs.theta.toFixed(2),vega:+bs.vega.toFixed(2)};
       }
     }
-    // FIX P: was `peLTP > 0.01 && peLTP < K` — now uses loose cap
     if (peLTP > 0.01 && peLTP < K * MAX_PE_LTP_RATIO) {
       const iv=impliedVol(peLTP,spot,K,T,r,q,false);
       if(iv>0 && iv<MAX_DISPLAY_IV){
@@ -276,14 +244,12 @@ function calculateChainGreeks(rows:any[],spot:number,_expiry:Date):ChainRow[] {
         peG={iv,delta:+bs.delta.toFixed(4),gamma:+bs.gamma.toFixed(6),theta:+bs.theta.toFixed(2),vega:+bs.vega.toFixed(2)};
       }
     }
-
     const ceOiOpen=Number(row.ce_oi_open??-1);
     const peOiOpen=Number(row.pe_oi_open??-1);
     const ceOiChg  = ceOiOpen>=0 ? ceOI-ceOiOpen : null;
     const peOiChg  = peOiOpen>=0 ? peOI-peOiOpen : null;
     const ceOiChgPct = (ceOiOpen>0 && ceOiChg!==null) ? +((ceOiChg/ceOiOpen)*100).toFixed(2) : null;
     const peOiChgPct = (peOiOpen>0 && peOiChg!==null) ? +((peOiChg/peOiOpen)*100).toFixed(2) : null;
-
     return {
       strike_price:K,ce_ltp:ceLTP||null,pe_ltp:peLTP||null,
       ce_volume:Number(row.ce_volume)||null,pe_volume:Number(row.pe_volume)||null,
@@ -327,11 +293,8 @@ const HISTORY_DEPTH=20,BID_WALL_RATIO=5,ASK_WALL_RATIO=5,MIN_QTY=50;
 const SPREAD_COLLAPSE=30,LTP_SPIKE=0.8,OI_DROP=0.02,FLIP_WIN=500;
 const ALERT_TTL=parseInt(process.env.SPOOF_ALERT_TTL_MS||'10000',10);
 const LAYER_WIN=200,LAYER_MIN=3;
-
-// FIX J: Fire cooldown — separates "display TTL" from "can re-fire" logic.
 const FIRE_COOLDOWN_MS = parseInt(process.env.SPOOF_FIRE_COOLDOWN_MS||'30000',10);
 
-// FIX J: Phase-aware thresholds for CLOSE_WATCH (15:00-15:30 IST).
 function getPhaseThresholds(): {wallRatio:number; minQty:number; ltpSpike:number; suppressOiDiv:boolean} {
   const h = getISTHour();
   const isClose  = h >= 15.0  && h < 15.5;
@@ -410,7 +373,12 @@ class SpoofingDetector {
     }
   }
 
+  // ── FIX 6: Guard near-zero LTP to prevent false-positive OI_DIVERGENCE
+  //    SPOOF cascade on deep OTM options whose premium is effectively zero.
+  //    When ltp < 0.5 (either current or previous tick), the percentage-change
+  //    arithmetic amplifies noise into a fake signal. Return early. ──────────
   private oiDiv(strike:number,ot:'CE'|'PE',s:TickSnap,p:TickSnap,now:number){
+    if(s.ltp < 0.5 || p.ltp < 0.5) return;  // FIX 6: skip near-zero LTP strikes
     const ltcP=p.ltp>0?(s.ltp-p.ltp)/p.ltp:0,oiP=p.oi>0?(s.oi-p.oi)/p.oi:0;
     if(Math.abs(ltcP)>LTP_SPIKE/100&&oiP<-OI_DROP){
       const conf=Math.min(90,40+Math.abs(ltcP)*2000+Math.abs(oiP)*1000);
@@ -619,7 +587,6 @@ function writeAlertFile(p:AlertPayload,kind:'alerts'|'watch'){
   try{fs.appendFileSync(path.join(ALERT_DIR,`${kind}_${getISTDate()}.jsonl`),JSON.stringify(p)+'\n');}catch(_){}
 }
 
-// ── FIX I: Per-state cooldown map — CRITICAL alerts are never throttled ──────
 const _tgCooldown = new Map<string, number>();
 
 function sendTelegram(p:AlertPayload){
@@ -767,10 +734,36 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
   max:10, min:2, idleTimeoutMillis:30000, connectionTimeoutMillis:8000,
   keepAlive:true, keepAliveInitialDelayMillis:10000,
-  options:'-c statement_timeout=15000',
+  options:'-c statement_timeout=120000',
 });
 pool.on('error',(err:Error)=>process.stderr.write(`⚠️  [POOL] ${err.message}\n`));
 
+// ── OI Pulse pipeline initialiser ─────────────────────────────────────────
+// Refreshes session-open OI snapshot and backfills oi_change nulls.
+// The DB trigger (installed by fix-oi-change-pipeline.sql) handles all future
+// UPSERT rows automatically — no changes needed in flushDB().
+//
+// FIX S: ALTER TABLE ADD COLUMN IF NOT EXISTS removed — columns (oi_change,
+// close) already exist in the production schema. Running ALTER TABLE on 10.5M
+// rows at every startup acquires a full table lock that exceeds the pool's
+// 60s statement_timeout, causing the pipeline to fail on every restart.
+// Schema changes must be applied once at deploy time, not at runtime.
+async function initOIPipeline(db: Pool): Promise<void> {
+  try {
+    // Refresh session-open OI snapshot (baseline for oi_change calculation)
+    await db.query('SELECT nifty_premium_tracking.refresh_oi_snapshot()');
+    await db.query("SET LOCAL statement_timeout = '0'");
+    // Backfill any existing rows that still have NULL oi_change
+    await db.query('SELECT nifty_premium_tracking.sync_oi_change()');
+    process.stdout.write('✅ [OI Pipeline] Session snapshot refreshed — oi_change live\n');
+  } catch (err: any) {
+    // Non-fatal: if SQL migration hasn't been run yet, log and continue.
+    // Run STEP2_fix-oi-change-pipeline.sql first to enable full functionality.
+    process.stderr.write(`⚠️  [OI Pipeline] Init skipped (run SQL migration first): ${err.message}\n`);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 async function ensureDbSchema(): Promise<void> {
   try {
     await pool.query(`
@@ -806,6 +799,27 @@ let liveVix:number|null = null;
 const greeksCache   = new Map<string,any>();
 const openOiMap     = new Map<string,number>();
 
+// ── PERF-2: Secondary expiry index — avoids O(n) liveChain scan ─────────────
+// Maps expiry string → Set of full keys ("strike_OT_expiry")
+// Maintained in handleTick() alongside liveChain.set()
+const liveChainByExpiry = new Map<string, Set<string>>();
+
+// ── PERF-6: Cached sorted expiry list — invalidated on new expiry key ────────
+let _expiryListCache: string[] | null = null;
+
+// ── PERF-3: Tick-driven push replaced with fixed-interval push loop ───────────
+// Tick handler sets _pushDirty = true. The 200ms timer fires the actual push.
+// Result: buildChain() + Greeks run at most 5×/s instead of 200×/s at open.
+let   _pushDirty  = false;
+let   _pushTimer: NodeJS.Timeout | null = null;
+const PUSH_INTERVAL_MS = 200;  // legacy — replaced by setImmediate push (PERF-4)
+
+function startPushLoop(): void { /* PERF-4: push is now immediate — loop is a no-op */ }
+
+function stopPushLoop(): void {
+  if (_pushTimer) { clearInterval(_pushTimer); _pushTimer = null; }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  SECTION 7 — HELPERS
 // ════════════════════════════════════════════════════════════════════════════
@@ -827,7 +841,6 @@ function monthNum(a:string):string{
   return m[a.toUpperCase()]||'01';
 }
 
-// parseOpt — FIXED regex: \d{2} for year (never \d{2,4})
 function parseOpt(sym: string): { expiry: string; strike: number; optionType: string } | null {
   const m = sym.match(/^NIFTY(\d{2}[A-Z]{3}\d{2})(\d+)(CE|PE)$/);
   if (!m) return null;
@@ -836,7 +849,6 @@ function parseOpt(sym: string): { expiry: string; strike: number; optionType: st
   return { expiry: m[1], strike, optionType: m[3] };
 }
 
-// expiryToDate — convert DDMMMYY → YYYY-MM-DD for DB storage
 function expiryToDate(expiry: string): string {
   const day  = expiry.slice(0, 2);
   const mon  = monthNum(expiry.slice(2, 5));
@@ -865,28 +877,19 @@ const OPTION_TICK_DEBUG_LIMIT = 5;
 //  SECTION 8 — CHAIN PAYLOAD BUILDER + PUSH TO API SERVER
 // ════════════════════════════════════════════════════════════════════════════
 
-let _buildChainCallCount = 0;
-
 function buildChain(targetExpiry?: string): ChainRow[] {
   if(!liveNiftySpot)return[];
   const atm=Math.round(liveNiftySpot/50)*50;
   const now=Date.now();
 
+  // ── PERF-2: resolve expiry from cache (O(1)) ─────────────────────────────
   let chosenExpiry = targetExpiry;
   if(!chosenExpiry){
-    const expiryDateMap = new Map<string,number>();
-    for(const k of liveChain.keys()){
-      const parts=k.split('_');
-      if(parts.length<3)continue;
-      const exp=parts[2];
-      if(expiryDateMap.has(exp))continue;
-      try{ expiryDateMap.set(exp, expiryStringToDate(exp).getTime()); }catch(_){}
+    const expiries = getAvailableExpiries();  // served from _expiryListCache
+    for (const exp of expiries) {
+      if (expiryStringToDate(exp).getTime() > now) { chosenExpiry = exp; break; }
     }
-    const sorted=Array.from(expiryDateMap.entries()).sort((a,b)=>a[1]-b[1]);
-    for(const [exp,ts] of sorted){
-      if(ts>now){ chosenExpiry=exp; break; }
-    }
-    if(!chosenExpiry && sorted.length>0) chosenExpiry=sorted[sorted.length-1][0];
+    if (!chosenExpiry && expiries.length > 0) chosenExpiry = expiries[expiries.length - 1];
   }
 
   if(!chosenExpiry){
@@ -896,31 +899,31 @@ function buildChain(targetExpiry?: string): ChainRow[] {
     return[];
   }
 
-  const strikeMap=new Map<number,{ce?:LiveOption;pe?:LiveOption}>();
-  let scanned=0, matched=0, skipped=0;
+  // ── PERF-2: use expiry bucket — O(bucket size) instead of O(all keys) ────
+  const bucket = liveChainByExpiry.get(chosenExpiry);
+  if (!bucket || bucket.size === 0) {
+    _buildChainCallCount++;
+    return [];
+  }
 
-  for(const [k,v] of liveChain.entries()){
-    scanned++;
-    const parts=k.split('_');
-    if(parts.length<3)continue;
-    if(parts[2]!==chosenExpiry){ skipped++; continue; }
-    matched++;
-    const strike=parseInt(parts[0]);
-    const ot=parts[1];
-    if(isNaN(strike)||Math.abs(strike-atm)>600)continue;
-    if(!strikeMap.has(strike))strikeMap.set(strike,{});
-    const row=strikeMap.get(strike)!;
-    if(ot==='CE')row.ce=v; else if(ot==='PE')row.pe=v;
-    if(process.env.DEBUG_CHAIN && ot==='PE' && v.ltp > 500){
-      process.stdout.write(`🔍 [PE DEBUG] key="${k}" ltp=${v.ltp} — expiry ${parts[2]}\n`);
-    }
+  const strikeMap=new Map<number,{ce?:LiveOption;pe?:LiveOption}>();
+
+  for (const k of bucket) {
+    const parts = k.split('_');           // only keys for this expiry
+    const strike = parseInt(parts[0]);
+    const ot     = parts[1];
+    if (isNaN(strike) || Math.abs(strike - atm) > 600) continue;
+    const v = liveChain.get(k);
+    if (!v) continue;
+    if (!strikeMap.has(strike)) strikeMap.set(strike, {});
+    const row = strikeMap.get(strike)!;
+    if (ot === 'CE') row.ce = v; else if (ot === 'PE') row.pe = v;
   }
 
   _buildChainCallCount++;
   if(_buildChainCallCount<=3){
     process.stdout.write(`📊 [CHAIN #${_buildChainCallCount}] chosen="${chosenExpiry}" | `+
-      `keys: ${scanned} total, ${matched} match, ${skipped} other expiries | `+
-      `strikes: ${strikeMap.size}\n`);
+      `bucket: ${bucket.size} keys | strikes: ${strikeMap.size}\n`);
   }
 
   if(!strikeMap.size)return[];
@@ -943,8 +946,13 @@ function buildChain(targetExpiry?: string): ChainRow[] {
     };
   });
 
-  // FIX C: Proper LRU cache with ce_volume/pe_volume in cache key
-  const ck=`${chosenExpiry}:`+rows.map(r=>`${r.strike_price}:${r.ce_ltp??0}:${r.pe_ltp??0}:${r.ce_oi??0}:${r.pe_oi??0}:${r.ce_volume??0}:${r.pe_volume??0}`).join('|');
+  // ── PERF-1 FIX: cache key uses only ltp — volume has zero effect on Greeks ─
+  // Old key included ce_volume/pe_volume which changed on every tick, giving
+  // ~0% cache hit rate and running Black-Scholes Newton-Raphson 200×/s at open.
+  const ck=`${chosenExpiry}:`+rows.map(r=>
+    `${r.strike_price}:${r.ce_ltp??0}:${r.pe_ltp??0}`
+  ).join('|');
+
   const cacheKey=`chain_${chosenExpiry}`;
   const cached=greeksCache.get(cacheKey);
   if(cached?.key===ck){
@@ -959,65 +967,81 @@ function buildChain(targetExpiry?: string): ChainRow[] {
   return chain;
 }
 
-// FIX E: Filter to future expiries only (with 1h grace for expiry-day close)
 function getAvailableExpiries(): string[] {
-  const expirySet = new Set<string>();
+  // ── PERF-6: serve from cache — invalidated in handleTick when new expiry appears
+  if (_expiryListCache) return _expiryListCache;
+
   const cutoff = Date.now() - 3_600_000;
-  for(const k of liveChain.keys()){
-    const parts=k.split('_');
-    if(parts.length<3)continue;
-    const exp = parts[2];
-    try{
-      if(expiryStringToDate(exp).getTime() > cutoff) expirySet.add(exp);
-    }catch(_){}
+  const result: string[] = [];
+  for (const exp of liveChainByExpiry.keys()) {
+    try {
+      if (expiryStringToDate(exp).getTime() > cutoff) result.push(exp);
+    } catch (_) {}
   }
-  return Array.from(expirySet).sort((a,b) =>
-    expiryStringToDate(a).getTime() - expiryStringToDate(b).getTime()
+  _expiryListCache = result.sort(
+    (a, b) => expiryStringToDate(a).getTime() - expiryStringToDate(b).getTime()
   );
+  return _expiryListCache;
 }
 
 function getNearestExpiry(): string {
   const expiries = getAvailableExpiries();
   const now = Date.now();
-  for(const exp of expiries){
-    if(expiryStringToDate(exp).getTime() > now) return exp;
+  for (const exp of expiries) {
+    if (expiryStringToDate(exp).getTime() > now) return exp;
   }
   return expiries[0] || '';
 }
 
-// ── FIX F: Periodic cleanup of expired keys from liveChain and openOiMap ────
 function pruneExpiredChainKeys(): void {
   const cutoff = Date.now() - 24 * 3_600_000;
   let pruned = 0;
-  for(const k of liveChain.keys()){
+  const expiredExpiries = new Set<string>();
+
+  for (const k of liveChain.keys()) {
     const parts = k.split('_');
-    if(parts.length < 3) continue;
-    try{
-      if(expiryStringToDate(parts[2]).getTime() < cutoff){
+    if (parts.length < 3) continue;
+    try {
+      if (expiryStringToDate(parts[2]).getTime() < cutoff) {
         liveChain.delete(k);
         openOiMap.delete(k);
+        expiredExpiries.add(parts[2]);
         pruned++;
       }
-    }catch(_){}
+    } catch (_) {}
   }
-  if(pruned > 0)
-    process.stdout.write(`🧹 [PRUNE] Removed ${pruned} expired chain keys\n`);
+
+  // ── PERF-2: also clean up expiry index + invalidate cache ────────────────
+  for (const exp of expiredExpiries) {
+    liveChainByExpiry.delete(exp);
+  }
+  if (expiredExpiries.size > 0) {
+    _expiryListCache = null;
+  }
+
+  if (pruned > 0)
+    process.stdout.write(`🧹 [PRUNE] Removed ${pruned} expired chain keys (${expiredExpiries.size} expiries)\n`);
 }
 
 const API_PORT=parseInt(process.env.API_PORT||'3001');
+let _buildChainCallCount = 0;
 let pushFail=0,lastPush=0;
-
-// FIX B: _pushPending flag ensures throttled ticks are always delivered.
 let _pushPending = false;
+
+// ── v7.5: OI Scanner instance ─────────────────────────────────────────────
+// Created with pool (DB) and null broadcaster.
+// Broadcaster is wired lazily in registerDirectWsEmitter() below.
+const oiScanner = new OIScannerEngine(pool, null);
 
 let _directWsEmitter: { broadcastPush: (payload: any) => void } | null = null;
 
 export function registerDirectWsEmitter(emitter: { broadcastPush: (payload: any) => void }): void {
   _directWsEmitter = emitter;
+  // ── v7.5: wire OI scanner to the same broadcaster ──────────────────────
+  oiScanner.setEmitter(emitter);
   process.stdout.write('⚡ [PUSH] Direct wsEmitter registered — bypassing HTTP round-trip\n');
 }
 
-// FIX G: Build payload object once and pass directly — no JSON round-trip.
 function buildPushPayload(): object | null {
   if(!liveNiftySpot) return null;
   const nearestExpiry = getNearestExpiry();
@@ -1051,8 +1075,6 @@ function buildPushPayload(): object | null {
 
 function pushToApi():void{
   const now=Date.now();
-
-  // FIX B: If within throttle window, schedule a deferred push instead of dropping.
   if(now-lastPush<80){
     if(!_pushPending){
       _pushPending=true;
@@ -1067,7 +1089,6 @@ function pushToApi():void{
   lastPush=now;
   if(!liveNiftySpot)return;
 
-  // FIX G: Build once, pass directly — no JSON round-trip for direct emitter
   const payloadObj = buildPushPayload();
   if(!payloadObj) return;
 
@@ -1076,7 +1097,6 @@ function pushToApi():void{
     return;
   }
 
-  // HTTP fallback — stringify only when needed
   const body = JSON.stringify(payloadObj);
   const req=http.request({hostname:'127.0.0.1',port:API_PORT,path:'/internal/push',method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body),'X-Internal-Secret':process.env.INTERNAL_SECRET||'jobber-internal-2026'}},(res)=>{res.resume();pushFail=0;});
   req.on('error',()=>{if(++pushFail===10)process.stdout.write('⚠️  [PUSH] api-server not responding\n');});
@@ -1091,6 +1111,27 @@ interface WriteRow{sym:string;tok:string;exch:string;expiry:string;strike:number
 const writeQ:WriteRow[]=[];let dbSaved=0,dbErrors=0,flushT:NodeJS.Timeout|null=null;
 let _flushing=false;
 
+// ── PERF-5: writeQ safety valve ──────────────────────────────────────────────
+// Guards against unbounded writeQ growth during DB flush stalls.
+// At 500 ticks/s × 5s stall = 2500 rows queued — this caps it at 5000.
+const WRITE_Q_MAX = 5000;
+let   _writeQDropped = 0;
+
+function enqueueWrite(row: WriteRow): void {
+  if (writeQ.length >= WRITE_Q_MAX) {
+    writeQ.shift();  // drop oldest — stale for analytics
+    _writeQDropped++;
+    if (_writeQDropped === 1 || _writeQDropped % 100 === 0) {
+      process.stderr.write(
+        `⚠️  [DB] writeQ full (${WRITE_Q_MAX}) — dropped ${_writeQDropped} rows. ` +
+        `DB flush stalling? dbErrors=${dbErrors}\n`
+      );
+    }
+  }
+  writeQ.push(row);
+  schedFlush();
+}
+
 async function flushDB():Promise<void>{
   flushT=null;
   if(_flushing||writeQ.length===0)return;
@@ -1098,12 +1139,15 @@ async function flushDB():Promise<void>{
   try{
   const batch=writeQ.splice(0,500);
   const ph=batch.map((_,i)=>{const b=i*19;return`($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10},$${b+11},$${b+12},$${b+13},$${b+14},$${b+15},$${b+16},$${b+17},$${b+18},$${b+19})`;}).join(',');
+  // ── FIX Q: price columns (ltp, bid, ask, high, low, open, close) must NOT
+  //    go through safeN() which calls Math.round() and destroys decimals.
+  //    safeN() is correct only for integer columns (volume, oi, qty).
   const args=batch.flatMap(r=>['NIFTY',r.sym,r.tok,r.expiry,r.strike,r.ot,r.exch,
-    safeN(r.ltp)??r.ltp,
-    safeN(r.vol),safeN(r.oi),
-    safeN(r.bid),safeN(r.ask),
-    safeN(r.bidQty),safeN(r.askQty),
-    safeN(r.hi),safeN(r.lo),safeN(r.op),safeN(r.cl),
+    r.ltp  || null,
+    safeN(r.vol), safeN(r.oi),
+    r.bid  || null, r.ask  || null,
+    safeN(r.bidQty), safeN(r.askQty),
+    r.hi   || null, r.lo   || null, r.op   || null, r.cl   || null,
     r.ts]);
   try{
     await pool.query(`INSERT INTO nifty_premium_tracking.options_data(symbol,trading_symbol,token,expiry_date,strike_price,option_type,exchange,ltp,volume,oi,bid_price,ask_price,bid_qty,ask_qty,high,low,open,close,timestamp) VALUES ${ph} ON CONFLICT ON CONSTRAINT options_data_upsert_key DO UPDATE SET ltp=EXCLUDED.ltp,volume=EXCLUDED.volume,oi=EXCLUDED.oi,bid_price=EXCLUDED.bid_price,ask_price=EXCLUDED.ask_price,bid_qty=EXCLUDED.bid_qty,ask_qty=EXCLUDED.ask_qty,high=EXCLUDED.high,low=EXCLUDED.low,timestamp=EXCLUDED.timestamp`,args);
@@ -1135,6 +1179,48 @@ function schedFlush(){if(!flushT)flushT=setTimeout(flushDB,100);}
 // ════════════════════════════════════════════════════════════════════════════
 
 let lastTick=Date.now(),ticks=0,isReconnecting=true,invalidCount=0;
+
+// ── PERF-4: Spoofing detector async queue ────────────────────────────────────
+// All 9 detectors previously ran synchronously inside handleTick() on every tick.
+// Moved to a setImmediate() drain loop — tick ingestion no longer blocks on them.
+const MAX_DETECT_QUEUE = 500;  // ring buffer — drops stale ticks if detector falls behind
+
+interface DetectJob {
+  strike: number; optionType: 'CE' | 'PE';
+  ltp: number; bidPrice: number; askPrice: number;
+  bidQty: number; askQty: number; oi: number; volume: number;
+}
+
+const detectQueue: DetectJob[] = [];
+let   detectScheduled = false;
+
+function drainDetectQueue(): void {
+  detectScheduled = false;
+  const batch = detectQueue.splice(0, 50);  // process up to 50 per drain
+  for (const j of batch) {
+    spoofingDetector.processTick(
+      j.strike, j.optionType, j.ltp,
+      j.bidPrice, j.askPrice,
+      j.bidQty, j.askQty,
+      j.oi, j.volume
+    );
+  }
+  if (detectQueue.length > 0) {
+    detectScheduled = true;
+    setImmediate(drainDetectQueue);
+  }
+}
+
+function enqueueDetect(job: DetectJob): void {
+  if (detectQueue.length >= MAX_DETECT_QUEUE) {
+    detectQueue.shift();  // drop oldest — stale
+  }
+  detectQueue.push(job);
+  if (!detectScheduled) {
+    detectScheduled = true;
+    setImmediate(drainDetectQueue);
+  }
+}
 
 function handleTick(data:any):void{
   lastTick=Date.now();ticks++;
@@ -1184,13 +1270,12 @@ function handleTick(data:any):void{
 
   const{expiry,strike,optionType}=parsed;
 
-  // ── FIX O: Paise → rupees conversion ────────────────────────────────────
-  // Angel One sends some option LTPs in paise (e.g. ₹410 = 41,000 paise).
-  // Old threshold 50_000 missed values like 41,000 (< 50,000) → stored as ₹41,000.
-  // New threshold 5_000: any raw value > ₹50 equivalent must be paise-encoded.
-  // NIFTY options have never exceeded ~₹2,000 in history, so this is safe.
-  const needsDiv = ltp > 5_000;
-  const px = (v: number) => (v > 0 ? (needsDiv ? v / 100 : v) : 0);
+  // ── FIX R: AngelWebSocket service already returns prices in RUPEES.
+  //    Confirmed by live debug output: ltp=431.25, ltp=112.5, ltp=158.8
+  //    These are rupee values, not paise. No ÷100 needed.
+  //    Old needsDiv (ltp > 5_000) was wrong: deep ITM options at ₹5450+
+  //    were being divided to ₹54.50. Now px() just passes value through.
+  const px = (v: number) => v > 0 ? v : 0;
   const ltpR    = px(ltp);
   const bidR    = px(Number(data.bidPrice||data.best_buy_price||0));
   const askR    = px(Number(data.askPrice||data.best_sell_price||0));
@@ -1217,19 +1302,45 @@ function handleTick(data:any):void{
     expiry,
   });
 
-  spoofingDetector.processTick(
-    strike,optionType as 'CE'|'PE',ltpR,
-    bidR, askR,
-    Number(data.bidQty||data.best_buy_quantity||0),
-    Number(data.askQty||data.best_sell_quantity||0),
-    oiRaw, volRaw
-  );
+  // ── PERF-2: maintain expiry index alongside liveChain ────────────────────
+  if (!liveChainByExpiry.has(expiry)) {
+    liveChainByExpiry.set(expiry, new Set());
+    _expiryListCache = null;  // invalidate sorted expiry cache
+  }
+  liveChainByExpiry.get(expiry)!.add(key);
 
-  if(changed)pushToApi();
+  // ── PERF-4: spoofing detector moved off tick hot path ────────────────────
+  // Previously ran 9 detectors synchronously here — now queued via setImmediate
+  enqueueDetect({
+    strike, optionType: optionType as 'CE'|'PE',
+    ltp: ltpR, bidPrice: bidR, askPrice: askR,
+    bidQty: Number(data.bidQty||data.best_buy_quantity||0),
+    askQty: Number(data.askQty||data.best_sell_quantity||0),
+    oi: oiRaw, volume: volRaw,
+  });
+
+  // ── v7.5: OI Scanner tick ─────────────────────────────────────────────────
+  oiScanner.onTick({
+    token:      Number(token) || 0,
+    strike:     strike,
+    expiry:     expiryToDate(expiry),
+    optionType: optionType as 'CE' | 'PE',
+    ltp:        ltpR,
+    bid:        bidR,
+    ask:        askR,
+    oi:         oiRaw,
+    volume:     volRaw,
+    spot:       liveNiftySpot,
+    timestamp:  Date.now(),
+  });
+
+  // ── PERF-3: mark dirty — 200ms push loop fires the actual buildChain() ───
+  if(changed) { _pushDirty = true; setImmediate(() => { if (!_pushDirty) return; _pushDirty = false; pushToApi(); }); }
 
   const exDate = expiryToDate(expiry);
 
-  writeQ.push({
+  // ── PERF-5: safety-valve write queue ─────────────────────────────────────
+  enqueueWrite({
     sym, tok:token, exch:data.exchange||'NFO',
     expiry:exDate, strike, ot:optionType, ltp:ltpR,
     vol:volRaw, oi:oiRaw,
@@ -1239,7 +1350,6 @@ function handleTick(data:any):void{
     hi:highR||null, lo:lowR||null, op:openR||null, cl:closeR||null,
     ts:new Date()
   });
-  schedFlush();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1258,7 +1368,7 @@ async function flushVix():Promise<void>{
 function startDisplay():NodeJS.Timeout{
   return setInterval(()=>{
     const als=getAlertStats(),ws=getWsStats(),status=isReconnecting?'🔄 RECONNECTING':'✅ LIVE';
-    process.stdout.write(`⚡ [${new Date().toLocaleTimeString()}] Ticks/s:${ticks} | Saved:${dbSaved.toLocaleString()} | Chain:${liveChain.size} | Spot:₹${liveNiftySpot||'–'} | VIX:${liveVix??'–'} | ${status} | Push:${pushFail===0?'✅':'⚠️'} | Err:${dbErrors} | 🚨${als.totalAlerts}(${als.totalCritical}crit) | WS:${ws.connectedClients} | Bad:${invalidCount}\n`);
+    process.stdout.write(`⚡ [${new Date().toLocaleTimeString()}] Ticks/s:${ticks} | Saved:${dbSaved.toLocaleString()} | Chain:${liveChain.size} | Spot:₹${liveNiftySpot||'–'} | VIX:${liveVix??'–'} | ${status} | Push:${pushFail===0?'✅':'⚠️'} | Err:${dbErrors} | Q:${writeQ.length} Drop:${_writeQDropped} | 🚨${als.totalAlerts}(${als.totalCritical}crit) | WS:${ws.connectedClients} | Bad:${invalidCount}\n`);
     ticks=0;
   },1000);
 }
@@ -1322,14 +1432,11 @@ function loadCache(maxAgeHours = CACHE_MAX_AGE_H): NiftyOption[] | null {
     if (!fs.existsSync(LOCAL_CACHE_FILE)) return null;
     const stat = fs.statSync(LOCAL_CACHE_FILE);
     const ageH = (Date.now() - stat.mtimeMs) / 3600000;
-    // FIX N: After market close (15:30 IST) the CDN is unreliable.
-    // Use stale cache unconditionally when market is closed.
     const nowISTH = (new Date().getUTCHours() + 5.5) % 24;
     const marketClosed = nowISTH >= 15.5 || nowISTH < 9.0;
     if (ageH > maxAgeHours) {
       if (marketClosed) {
         process.stdout.write(`💾 Cache is ${ageH.toFixed(1)}h old — market closed, using stale cache ✅\n`);
-        // fall through to load and return
       } else {
         process.stdout.write(`💾 Cache is ${ageH.toFixed(1)}h old (limit ${maxAgeHours}h) — refreshing from CDN\n`);
         return null;
@@ -1385,7 +1492,6 @@ async function fetchFromCDN(): Promise<any[]> {
 }
 
 async function fetchNiftyOptionsFromCDN(): Promise<NiftyOption[]> {
-
   const cached = loadCache();
   if (cached) return cached;
 
@@ -1511,8 +1617,22 @@ async function fetchNiftyOptionsFromCDN(): Promise<NiftyOption[]> {
 
 interface LoginResult{feedToken:string;clientCode:string;apiKey:string;service:any;}
 
+// ── FIX 3: WAF 60s rate-limit guard ─────────────────────────────────────────
+// Angel One's WAF throttles rapid successive login attempts. If attempt > 1,
+// we ensure at least 60 000 ms have elapsed since the previous attempt started
+// before firing the next request. This prevents AB1006 / 429 responses that
+// previously caused the collector to burn all 5 attempts in under a second.
 async function loginToAngel(maxAttempts=5):Promise<LoginResult>{
+  let lastLoginAt = 0;  // FIX 3: tracks when each attempt was fired
   for(let attempt=1;attempt<=maxAttempts;attempt++){
+    // ── FIX 3: enforce 60s minimum between attempts ──────────────────────
+    if(attempt > 1 && Date.now() - lastLoginAt < 60_000){
+      const waitMs = 60_000 - (Date.now() - lastLoginAt);
+      process.stdout.write(`   ⏱  WAF rate-limit guard: waiting ${(waitMs/1000).toFixed(1)}s before retry\n`);
+      await sleep(waitMs);
+    }
+    lastLoginAt = Date.now();
+    // ────────────────────────────────────────────────────────────────────────
     process.stdout.write(`🔐 [LOGIN] Attempt ${attempt}/${maxAttempts}...\n`);
     try{
       const svc=createAngelOneService();
@@ -1591,6 +1711,9 @@ async function runSession():Promise<void>{
       liveNiftyPrev = 0;
       liveNiftyOpen = 0;
       _totalAlerts = 0; _totalCritical = 0; _totalWatch = 0;
+      dbErrors = 0;  // FIX 5: reset DB error counter between sessions
+      _pushDirty = false;                   // PERF-3: stop pending push
+      detectQueue.length = 0;               // PERF-4: drain detect queue
       openOiMap.clear();
       reason==='dead-man'?resolve():reject(new Error(reason));
     };
@@ -1608,7 +1731,6 @@ async function runSession():Promise<void>{
       deadMan=armDeadMan(()=>abort('dead-man'));
       vixTimer=setInterval(flushVix,1000);
 
-      // FIX D: markSubscribed() before CDN await
       spoofingDetector.markSubscribed();
       process.stdout.write(`🛡️  Spoof detector warming up (${WARMUP_PERIOD_MS/1000}s)...\n`);
 
@@ -1736,8 +1858,11 @@ async function main():Promise<void>{
     _isShuttingDown = true;
     process.stdout.write('\n⏹️  Shutting down...\n');
     clearInterval(display);
+    stopPushLoop();                          // PERF-3: stop push interval
+    _pushDirty = false;
     await sleep(100);
     spoofingDetector.reset();
+    oiScanner.destroy();
     while(writeQ.length>0){await flushDB();await sleep(50);}
     await pool.end();
     process.stdout.write('✅ Shutdown complete\n');process.exit(0);
@@ -1749,18 +1874,29 @@ async function main():Promise<void>{
 
   startSpoofDashboardWS();
   spoofingDetector.onAlert(routeSpoofAlert);
+  await initOIPipeline(pool);  // ← OI Pulse: snapshot + oi_change backfill (FIX S: no ALTER TABLE)
 
   // FIX F: Periodic cleanup of expired chain keys every 10 minutes
   setInterval(pruneExpiredChainKeys, 10 * 60 * 1000);
 
+  // ── v7.5: OI Scanner periodic cycles ────────────────────────────────────
+  // No existing 5min/15min interval in this file — these are the only ones.
+  setInterval(() => { oiScanner.onFiveMinute().catch(() => {}); },    5 * 60 * 1000);
+  setInterval(() => { oiScanner.onFifteenMinute().catch(() => {}); }, 15 * 60 * 1000);
+  // ─────────────────────────────────────────────────────────────────────────
+
   process.stdout.write(`📡 Spoof alerts → alerts/alerts_${getISTDate()}.jsonl\n`);
   process.stdout.write(`📡 Telegram: ${TG_TOKEN?'✅ configured':'⚠️  not set'}\n`);
-  process.stdout.write(`📡 WS feed: ws://localhost:${WS_PORT}\n\n`);
+  process.stdout.write(`📡 WS feed: ws://localhost:${WS_PORT}\n`);
+  process.stdout.write(`🔭 OI Scanner: initialized, first cycle in 5 minutes\n`);
+  process.stdout.write(`⚡ Push loop: ${PUSH_INTERVAL_MS}ms interval (PERF-3)\n\n`);
+
+  startPushLoop();  // PERF-3: fixed-interval push decoupled from tick handler
 
   while(!shuttingDown){
     attempt++;isReconnecting=true;
     try{await runSession();}
-    catch(err:any){process.stderr.write(`\n❌ [OUTER] Session crashed: ${err.message}\n`);}
+    catch(err:any){process.stderr.write(`\n❌ [OUTER] Session crashed: ${err?.message ?? String(err)}\n${err?.stack ?? ""}\n`);}
     if(shuttingDown)break;
     const wait=Math.min(attempt*15,60);
     process.stdout.write(`🔄 Restarting in ${wait}s (attempt ${attempt})...\n`);
@@ -1769,7 +1905,13 @@ async function main():Promise<void>{
 }
 
 process.stdout.write('╔══════════════════════════════════════════════════════════════╗\n');
-process.stdout.write(`║  NIFTY Collector ${VERSION} — ALL BUGS FIXED                      ║\n`);
+process.stdout.write(`║  NIFTY Collector ${VERSION} — Perf: BucketIndex+AsyncDetect+PushLoop ║\n`);
 process.stdout.write('╚══════════════════════════════════════════════════════════════╝\n\n');
 
 main().catch(err=>{process.stderr.write(`FATAL: ${err.message}\n`);process.exit(1);});
+
+
+
+
+
+

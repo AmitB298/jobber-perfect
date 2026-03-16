@@ -2,7 +2,7 @@
 // tabs/ChainTab.tsx — Options Chain
 // ============================================================================
 import { useRef } from 'react';
-import { ChainRow, DashData } from '../../types';
+import { DashData } from '../../types';
 import { n, fmt, fmtK, ivColor } from '../shared/helpers';
 
 interface Props {
@@ -88,9 +88,9 @@ export function ChainTab({ data, prevChainRef }: Props) {
                     <td className="py-1.5 px-1 text-right font-mono" style={{ color: ivColor(row.ce_greeks?.iv) }}>{row.ce_greeks?.iv != null ? fmt(row.ce_greeks.iv, 1) : '–'}</td>
                     <td className={`py-1.5 px-1 text-right font-mono ${isITMce ? 'text-green-300' : 'text-gray-500'}`}>{row.ce_greeks?.delta != null ? fmt(row.ce_greeks.delta, 3) : '–'}</td>
                     <td className="py-1.5 px-1 text-right font-mono text-orange-400/80">{row.ce_greeks?.theta != null ? fmt(row.ce_greeks.theta, 1) : '–'}</td>
-                    <td className={`py-1.5 px-2 text-right font-bold text-sm ${isITMce ? 'text-green-300' : 'text-green-700'}`}>{row.ce_ltp != null ? fmt(row.ce_ltp, 1) : '–'}</td>
+                    <td className={`py-1.5 px-2 text-right font-bold text-sm ${isITMce ? 'text-green-300' : 'text-green-700'}`}>{row.ce_ltp != null ? fmt(row.ce_ltp, 2) : '–'}</td>
                     <td className={`py-1.5 px-3 text-center font-bold bg-gray-800/60 ${isATM ? 'text-yellow-300 text-sm' : 'text-gray-200'}`}>{isATM && <span className="text-yellow-500 mr-1 text-xs">►</span>}{strike}</td>
-                    <td className={`py-1.5 px-2 text-left font-bold text-sm ${isITMpe ? 'text-red-300' : 'text-red-700'}`}>{row.pe_ltp != null ? fmt(row.pe_ltp, 1) : '–'}</td>
+                    <td className={`py-1.5 px-2 text-left font-bold text-sm ${isITMpe ? 'text-red-300' : 'text-red-700'}`}>{row.pe_ltp != null ? fmt(row.pe_ltp, 2) : '–'}</td>
                     <td className="py-1.5 px-1 text-left font-mono text-orange-400/80">{row.pe_greeks?.theta != null ? fmt(row.pe_greeks.theta, 1) : '–'}</td>
                     <td className={`py-1.5 px-1 text-left font-mono ${isITMpe ? 'text-red-300' : 'text-gray-500'}`}>{row.pe_greeks?.delta != null ? fmt(row.pe_greeks.delta, 3) : '–'}</td>
                     <td className="py-1.5 px-1 text-left font-mono" style={{ color: ivColor(row.pe_greeks?.iv) }}>{row.pe_greeks?.iv != null ? fmt(row.pe_greeks.iv, 1) : '–'}</td>
@@ -120,4 +120,3 @@ export function ChainTab({ data, prevChainRef }: Props) {
     </div>
   );
 }
-
